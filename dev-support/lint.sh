@@ -5,9 +5,9 @@ cd "$FWDIR"
 cd ../
 
 # Check imports
-isort -c avssl/
+python3 -m isort -c avssl/ --profile black
 # Check code format
-black avssl/ test/ --check --experimental-string-processing
+python3 -m black avssl/ test/ --check --experimental-string-processing
 # Check lint: Not checking the code in website
 
 set +euxo pipefail

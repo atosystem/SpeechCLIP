@@ -27,16 +27,15 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 1000
-    max_step: 10000
+    warmup: 500
+    max_step: 5000
     final_lr: 1.e-8
 
 trainer:
-  max_steps: 10000
+  max_steps: 5000
   gradient_clip_val: 10
   accumulate_grad_batches: 4
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  check_val_every_n_epoch: 1
   default_root_dir: exp/sc_p_tmp

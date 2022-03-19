@@ -5,8 +5,8 @@ cd "$FWDIR"
 cd ../
 
 # Sort imports
-isort avssl/
+python3 -m isort avssl/ --profile black
 # Autoformat code
-black avssl/ test/
+python3 -m black avssl/ test/
 
 set +euxo pipefail

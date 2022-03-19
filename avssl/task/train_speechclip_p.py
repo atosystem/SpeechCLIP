@@ -7,7 +7,6 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from torch.utils.data import DataLoader, random_split
 
-from .base_task import BaseTask
 from avssl.base import OrderedNamespace
 from avssl.data import (
     FlickrImageCaptionDataset,
@@ -15,6 +14,8 @@ from avssl.data import (
     collate_image_captions,
 )
 from avssl.model import ParallelSpeechClip
+
+from .base_task import BaseTask
 
 
 class TrainParallelSpeechClip(BaseTask):
@@ -112,19 +113,20 @@ class TrainParallelSpeechClip(BaseTask):
             collate_fn=collate_image_captions,
         )
 
+        if config.save_path != "":
+            config.trainer.default_root_dir = config.save_path
+
         model_checkpoint = ModelCheckpoint(
-            filename="{epoch}-{step}-{val_acc:.4f}",
+            dirpath=config.trainer.default_root_dir,
+            filename="{epoch}-{step}-{val_loss:.4f}",
             monitor="val_loss",
             save_top_k=1,
             mode="min",
             every_n_epochs=1,
         )
 
-        if config.save_path != "":
-            config.trainer.default_root_dir = config.save_path
-
         trainer = Trainer(
-            callbacks=[model_checkpoint, TQDMProgressBar()],
+            callbacks=[TQDMProgressBar(), model_checkpoint],
             enable_progress_bar=True,
             gpus=config.gpus,
             **config.trainer,

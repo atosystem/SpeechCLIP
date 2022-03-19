@@ -35,9 +35,7 @@ class FlickrImageCaptionDataset(BaseImageCaptionDataset):
 
         wav_base_path = os.path.join(self.dataset_root, "flickr_audio", "wavs")
         wav_list = os.listdir(wav_base_path)
-        wav_names = {
-            p[:-6] for p in wav_list if p.split(".")[-1] == "wav"
-        }
+        wav_names = {p[:-6] for p in wav_list if p.split(".")[-1] == "wav"}
         wav_names_to_paths = defaultdict(list)
         for p in wav_list:
             name = p.split("/")[-1][:-6]

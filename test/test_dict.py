@@ -32,7 +32,7 @@ def test_dict():
     d_2_2 = ons_1.to_dict()
     od_1 = ons_1.odict
     od_1_2 = ons_1.to_odict()
-    
+
     assert ons_1.keys() == d_2.keys()
     assert ons_1.keys() == od_1.keys()
     assert d_2 == d_2_2
@@ -40,7 +40,7 @@ def test_dict():
     assert isinstance(d_2, dict)
     assert isinstance(d_2_2, dict)
     assert isinstance(od_1, OrderedDict)
-    assert isinstance(od_1_2, OrderedDict)    
+    assert isinstance(od_1_2, OrderedDict)
 
     # Consistency among dict and namespaces
     d_3 = {"a": 1, "b": 2}

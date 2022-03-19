@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 
 
 def random_crop_max_length(

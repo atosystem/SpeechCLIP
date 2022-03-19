@@ -1,7 +1,8 @@
 import abc
+
+import pytorch_lightning as pl
 import torch
 from torch import nn, optim
-import pytorch_lightning as pl
 
 from avssl.base import OrderedNamespace
 
