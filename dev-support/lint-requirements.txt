@@ -1,0 +1,2 @@
+black[jupyter]==21.8b0
+isort==5.9.3

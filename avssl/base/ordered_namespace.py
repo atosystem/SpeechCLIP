@@ -1,7 +1,7 @@
-from typing import Union, List
 from argparse import Namespace
-from types import SimpleNamespace
 from collections import OrderedDict
+from types import SimpleNamespace
+from typing import List, Union
 
 
 class OrderedNamespace(object):

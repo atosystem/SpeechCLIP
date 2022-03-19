@@ -1,8 +1,7 @@
-import torch
-from torch import nn
-from PIL import Image
-
 import clip
+import torch
+from PIL import Image
+from torch import nn
 
 
 class ClipModel(nn.Module):

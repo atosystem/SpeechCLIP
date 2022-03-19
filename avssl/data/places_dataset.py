@@ -1,6 +1,6 @@
-import os
 import json
 import logging
+import os
 
 from .base_dataset import BaseImageCaptionDataset
 
