@@ -1,5 +1,6 @@
 from argparse import Namespace
 from types import SimpleNamespace
+from collections import OrderedDict
 from avssl.base import OrderedNamespace
 
 
@@ -14,9 +15,6 @@ def test_dict():
     ons_1 = OrderedNamespace(d_1)
     ons_2 = OrderedNamespace(**d_1)
 
-    d_2 = ons_1.to_dict()
-    od_1 = ons_1.to_odict()
-
     assert ons_1.a == ons_1["a"]
     assert ons_1.b == ons_1["b"]
     assert ons_1.b[0] == d_1["b"][0]
@@ -26,9 +24,23 @@ def test_dict():
     assert ons_1.h.i == 5
     assert ons_1.h.j.k == 6
     assert ons_1 == ons_2
-    assert ons_1.keys() == od_1.keys()
     assert len(ons_1) == 4
     assert len(ons_1.keys()) == len(ons_1)
+    assert "a" in ons_1
+
+    d_2 = ons_1.pydict
+    d_2_2 = ons_1.to_dict()
+    od_1 = ons_1.odict
+    od_1_2 = ons_1.to_odict()
+    
+    assert ons_1.keys() == d_2.keys()
+    assert ons_1.keys() == od_1.keys()
+    assert d_2 == d_2_2
+    assert od_1 == od_1_2
+    assert isinstance(d_2, dict)
+    assert isinstance(d_2_2, dict)
+    assert isinstance(od_1, OrderedDict)
+    assert isinstance(od_1_2, OrderedDict)    
 
     # Consistency among dict and namespaces
     d_3 = {"a": 1, "b": 2}

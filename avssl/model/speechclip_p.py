@@ -25,7 +25,7 @@ class ParallelSpeechClip(BaseLightningModel):
 
         self.clip = ClipModel(**config.clip)
 
-        self.audio_pooling_type = config.audio_encoder.pooling
+        self.audio_pooling_type = config.audio_encoder.pooling.type
         if self.audio_pooling_type == "mean":
             self.audio_pooling = MeanPoolingLayer(
                 self.audio_encoder.out_dim, self.clip.out_dim
@@ -53,7 +53,7 @@ class ParallelSpeechClip(BaseLightningModel):
 
     def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
         if isinstance(images, list):
-            image_tensor = self.clip.prep_image(paths)
+            image_tensor = self.clip.prep_image(images).to(self.device)
         elif isinstance(images, torch.Tensor):
             if images.dim() != 4 or images.shape[1] != 3:
                 raise ValueError(f"Incorrect image tensor shape {images.shape}")
@@ -66,7 +66,7 @@ class ParallelSpeechClip(BaseLightningModel):
 
     def forward_text(self, sents: Union[list, torch.Tensor]) -> torch.Tensor:
         if isinstance(sents, list):
-            text_tensor = self.clip.prep_text(sents)
+            text_tensor = self.clip.prep_text(sents).to(self.device)
         elif isinstance(sents, torch.Tensor):
             if sents.dim() != 2:
                 raise ValueError(f"Incorrect text tensor shape {sents.shape}")
@@ -115,80 +115,44 @@ class ParallelSpeechClip(BaseLightningModel):
         self.log("val_loss", loss)
 
     def configure_optimizers(self):
-        optim_config = []
+        optimizers = []
+        schedulers = []
 
-        audio_pooling_optimizer = getattr(nn, self.config.audio_encoder.optim.name)(
-            self.audio_pooling.parameters(), **self.config.audio_encoder.optim
+        audio_params = list(self.audio_pooling.parameters())
+        if self.config.audio_encoder.trainable:
+            audio_params = audio_params + list(self.audio_encoder.parameters())
+
+        audio_optimizer = getattr(torch.optim, self.config.audio_encoder.optim.name)(
+            audio_params,
+            **self.config.audio_encoder.optim.args,
         )
-        audio_pooling_scheduler = get_scheduler(
-            self.config.audio_encoder.optim.scheduler.name,
-            audio_pooling_optimizer,
-            **self.config.audio_encoder.optim.scheduler,
+        audio_scheduler = get_scheduler(
+            optimizer=audio_optimizer,
+            **self.config.audio_encoder.scheduler,
         )
-        optim_config.append(
+        optimizers.append(audio_optimizer)
+        schedulers.append(
             {
-                "optimizer": audio_pooling_optimizer,
-                "lr_scheduler": {
-                    "scheduler": audio_pooling_scheduler,
-                    "interval": "step",
-                },
+                "scheduler": audio_scheduler,
+                "interval": "step",
             }
         )
 
-        if self.config.audio_encoder.trainable:
-            audio_optimizer = getattr(nn, self.config.audio_encoder.optim.name)(
-                self.audio_encoder.parameters(), **self.config.audio_encoder.optim
-            )
-            audio_scheduler = get_scheduler(
-                self.config.audio_encoder.optim.scheduler.name,
-                audio_optimizer,
-                **self.config.audio_encoder.optim.scheduler,
-            )
-            optim_config.append(
-                {
-                    "optimizer": audio_optimizer,
-                    "lr_scheduler": {
-                        "scheduler": audio_scheduler,
-                        "interval": "step",
-                    },
-                }
-            )
-
         if self.config.clip.image_encoder_trainable:
-            image_optimizer = getattr(nn, self.config.clip.image_optim.name)(
-                self.clip.model.visual.parameters(), **self.config.clip.image_optim
+            image_optimizer = getattr(torch.optim, self.config.clip.image_optim.name)(
+                self.clip.model.visual.parameters(),
+                **self.config.clip.image_optim.args,
             )
             image_scheduler = get_scheduler(
-                self.config.clip.image_optim.scheduler.name,
-                image_optimizer,
-                **self.config.clip.image_optim.scheduler,
+                optimizer=image_optimizer,
+                **self.config.clip.scheduler,
             )
-            optim_config.append(
+            optimizers.append(image_optimizer)
+            schedulers.append(
                 {
-                    "optimizer": image_optimizer,
-                    "lr_scheduler": {
-                        "scheduler": image_scheduler,
-                        "interval": "step",
-                    },
+                    "scheduler": image_scheduler,
+                    "interval": "step",
                 }
             )
 
-        # if self.config.clip.text_encoder_trainable:
-        #     text_optimzer = getattr(nn, self.config.clip.text_optim.name)(
-        #         self.clip.model.transformer.parameters(), **self.config.clip.text_optim
-        #     )
-        #     text_scheduler = get_scheduler(
-        #         self.config.clip.text_optim.scheduler.name,
-        #         text_optimizer,
-        #         **self.config.clip.text_optim.scheduler,
-        #     )
-        #     optim_config.append(
-        #         {
-        #             "optimizer": text_optimizer,
-        #             "lr_scheduler": {
-        #                 "scheduler": text_scheduler,
-        #                 "interval": "step",
-        #             }
-        #         }
-        #     )
-        return optim_config
+        return optimizers, schedulers

@@ -1,7 +1,7 @@
-import abs
-import pytorch_lightning as pl
+import abc
 import torch
 from torch import nn, optim
+import pytorch_lightning as pl
 
 from avssl.base import OrderedNamespace
 
@@ -19,14 +19,6 @@ class BaseLightningModel(pl.LightningModule):
     @abc.abstractmethod
     def training_step(self, batch, batch_idx):
         raise NotImplementedError
-
-    # @abc.abstractmethod
-    # def validation_step(self, batch, batch_idx):
-    #     raise NotImplementedError
-
-    # @abc.abstractmethod
-    # def test_step(self, batch, batch_idx):
-    #     raise NotImplementedError
 
     @abc.abstractmethod
     def configure_optimizers(self):

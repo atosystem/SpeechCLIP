@@ -19,24 +19,26 @@ places_json_file_val = (
 
 
 def get_flickr_dataset(split, image_transform=None):
-    dataset = FlickrImageCaptionDataset(flickr_base_path, split, image_transform)
+    dataset = FlickrImageCaptionDataset(
+        dataset_root=flickr_base_path, split=split, image_transform=image_transform
+    )
     return dataset
 
 
 def get_places_dataset(json_file, split, image_transform=None):
     dataset = PlacesImageCaptionDataset(
+        json_file,
         places_audio_base_path,
         places_image_base_path,
         split=split,
-        dataset_json_file=json_file,
+        image_transform=image_transform,
     )
     return dataset
 
 
 def try_dataset(dataset):
     audio_feat, image = dataset[0]
-    assert audio_feat.ndim == 2
-    assert audio_feat.shape[1] == 1
+    assert audio_feat.ndim == 1
     assert image.shape == (3, 224, 224)
     assert isinstance(image, torch.Tensor)
 

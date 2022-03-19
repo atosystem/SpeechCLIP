@@ -3,6 +3,8 @@
 # How to execute?
 #   bash script/install.sh
 
+export PIP_USER=false
+
 mkdir -p tmp_tools
 cd tmp_tools
 
@@ -21,3 +23,4 @@ cd ..
 pip install -r requirements.txt
 
 pip uninstall dtw-python -y
+pip uninstall pesq -y

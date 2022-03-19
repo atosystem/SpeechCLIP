@@ -5,6 +5,7 @@ import torch
 from s3prl import hub
 from torch import nn
 
+from avssl.data import random_crop_max_length
 from avssl.util import init_weights
 
 
@@ -17,6 +18,7 @@ class S3prlSpeechEncoder(nn.Module):
         device: str = "cpu",
         feat_select_idx: Union[str, list] = "all",
         layer_drop: Union[str, float] = 0.0,
+        max_audio_len: int = -1,
         **kwargs,
     ):
         """Speech Encoder with S3PRL (v0.3.1)
@@ -36,6 +38,7 @@ class S3prlSpeechEncoder(nn.Module):
         self.trainable = trainable
         self.device = device
         self.feat_select_idx = feat_select_idx
+        self.max_audio_len = max_audio_len
 
         self.encoder = getattr(hub, name)().to(device)
         if hasattr(self.encoder, "get_downsample_rates"):
@@ -64,9 +67,9 @@ class S3prlSpeechEncoder(nn.Module):
 
         self.out_dim = 0
         with torch.no_grad():
-            wav = [torch.randn(16000, dtype=torch.float)]
-            feat_all, _ = self.encoder(wav)
-            self.out_dim = feat_all["last_hidden_state"].shape[2]
+            wav = [torch.randn(16000, dtype=torch.float, device=device)]
+            feat = self.encoder(wav)
+            self.out_dim = feat["last_hidden_state"].shape[2]
 
         logging.info(f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim}")
 
@@ -93,9 +96,18 @@ class S3prlSpeechEncoder(nn.Module):
 
         if isinstance(wav, torch.Tensor):
             if wav.dim() == 2:
-                wav = [wav[b, : wav_len[b]] for b in range(len(wav))]
+                if len(wav_len) > 0:
+                    wav = [wav[b, : wav_len[b]] for b in range(len(wav))]
+                else:
+                    wav = [wav[b] for b in range(len(wav))]
             elif wav.dim() == 1:
                 wav = [wav]
+
+        if self.training:
+            wav = [
+                random_crop_max_length(wav[b], self.max_audio_len, len(wav[b]))
+                for b in range(len(wav))
+            ]
 
         if self.trainable:
             feat = self.encoder(wav)

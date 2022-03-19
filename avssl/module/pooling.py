@@ -8,7 +8,7 @@ class MeanPoolingLayer(nn.Module):
         in_dim: int = 0,
         out_dim: int = 0,
         bias: bool = True,
-        pre_proj: bool = True,
+        pre_proj: bool = False,
     ):
         super().__init__()
 
@@ -22,7 +22,7 @@ class MeanPoolingLayer(nn.Module):
         if self.proj is not None and self.pre_proj:
             x = self.proj(x)
 
-        x = x.sum(-1) / x_len.float()
+        x = x.mean(-2) / x_len.float().unsqueeze(-1)
 
         if self.proj is not None and not self.pre_proj:
             x = self.proj(x)

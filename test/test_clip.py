@@ -29,8 +29,8 @@ def test_clip():
         logits_img, logits_text = model.get_scores(image_tensor, text_tensor)
         probs = logits_img.softmax(-1).cpu()
 
-        assert image_rep.shape == (1, model.rep_size)
-        assert text_rep.shape == (2, model.rep_size)
+        assert image_rep.shape == (1, model.out_dim)
+        assert text_rep.shape == (2, model.out_dim)
         assert logits_img.shape == (1, 2)
         assert logits_text.shape == (2, 1)
         assert probs.argmax().item() == 0
