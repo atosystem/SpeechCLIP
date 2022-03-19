@@ -15,6 +15,5 @@ jobs:
         run: |
           pip install --upgrade pip  
           pip install -r ./dev-support/lint-requirements.txt
-          pip install -r ./dev-support/mypy-requirements.txt
       - name: Check python code style
         run: ./dev-support/lint.sh

@@ -3,7 +3,6 @@ from torchvision import transforms
 
 
 def get_simple_image_transform(H: int, W: int = -1) -> transforms.Compose:
-    
     """Get a simple image transformation function.
 
     Args:
