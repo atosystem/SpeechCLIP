@@ -1,4 +1,4 @@
-import abs
+import abc
 import torch
 from torch import nn
 from torch import optim
@@ -20,14 +20,6 @@ class BaseLightningModel(pl.LightningModule):
     @abc.abstractmethod
     def training_step(self, batch, batch_idx):
         raise NotImplementedError
-
-    # @abc.abstractmethod
-    # def validation_step(self, batch, batch_idx):
-    #     raise NotImplementedError
-
-    # @abc.abstractmethod
-    # def test_step(self, batch, batch_idx):
-    #     raise NotImplementedError
 
     @abc.abstractmethod
     def configure_optimizers(self):

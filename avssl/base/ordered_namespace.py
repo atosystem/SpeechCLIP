@@ -29,7 +29,7 @@ class OrderedNamespace(object):
             OrderedDict,
             SimpleNamespace,
             Namespace,
-            List[dict, OrderedDict, SimpleNamespace, Namespace],
+            list,
         ] = None,
         **kwargs
     ):
@@ -76,11 +76,17 @@ class OrderedNamespace(object):
     def __setitem__(self, key, val):
         self._odict[key] = val
 
+    def __iter__(self):
+        return self.pydict.__iter__()
+
+    def __next__(self):
+        return self.pydict.__next__()
+
     @property
     def __dict__(self):
         return self._odict
 
-    def __setstate__(self, state):  # Support copy.copy
+    def __setstate__(self, state):
         super(OrderedNamespace, self).__setattr__("_odict", OrderedDict())
         self._odict.update(state)
 
@@ -89,12 +95,9 @@ class OrderedNamespace(object):
 
     def __ne__(self, other):
         return not self.__eq__(other)
-    
+
     def __len__(self):
         return len(self._odict)
-    
-    def __iter__(self):
-        self._odict.__iter__()
 
     def to_odict(self):
         out_odict = OrderedDict()
@@ -114,6 +117,14 @@ class OrderedNamespace(object):
                 out_dict[key] = val
         return out_dict
 
+    @property
+    def odict(self):
+        return self.to_odict()
+
+    @property
+    def pydict(self):
+        return self.to_dict()
+
     def __str__(self):
         return "OrderedNamespace(" + self.to_dict().__str__() + ")"
 
@@ -122,6 +133,12 @@ class OrderedNamespace(object):
 
     def items(self):
         return self._odict.items()
+
+    def values(self):
+        return self._odict.values()
+
+    def copy(self):
+        return self.__class__(self)
 
     def __delitem__(self, key, dict_delitem=dict.__delitem__):
         self._odict.__delitem__(key, dict_delitem=dict.__delitem__)

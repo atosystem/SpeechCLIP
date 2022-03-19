@@ -16,15 +16,20 @@ class BaseImageCaptionDataset(Dataset):
         image_transform=None,
         audio_transform=None,
         target_sr: int = 16_000,
+        load_audio: bool = True,
+        load_image: bool = True,
+        **kwargs,
     ):
         assert split in {"train", "dev", "test"}
         self.split = split
 
-        self.dataset_root
+        self.dataset_root = dataset_root
         self.dataset_json_file = dataset_json_file
         self.audio_transform = audio_transform
         self.image_transform = image_transform
         self.target_sr = target_sr
+        self.load_audio = load_audio
+        self.load_image = load_image
 
         self.data = []
 
@@ -37,12 +42,17 @@ class BaseImageCaptionDataset(Dataset):
         Returns:
             torch.FloatTensor: Audio features.
         """
-        waveform, _ = librosa.load(path, sr=self.target_sr)
-        if self.audio_transform is not None:
-            features = self.audio_transform(waveform)
+
+        if self.load_audio:
+            waveform, _ = librosa.load(path, sr=self.target_sr)
+            if self.audio_transform is not None:
+                audio = self.audio_transform(waveform)
+            else:
+                audio = torch.FloatTensor(waveform)
         else:
-            features = torch.FloatTensor(waveform)
-        return features
+            audio = path
+
+        return audio
 
     def _LoadImage(self, path: str):
         """Load image from file
@@ -53,9 +63,13 @@ class BaseImageCaptionDataset(Dataset):
         Returns:
             torch.FloatTensor: Transformed image.
         """
-        img = Image.open(path).convert("RGB")
-        if self.image_transform is not None:
-            img = self.image_transform(img)
+
+        if self.load_image:
+            img = Image.open(path).convert("RGB")
+            if self.image_transform is not None:
+                img = self.image_transform(img)
+        else:
+            img = path
 
         return img
 

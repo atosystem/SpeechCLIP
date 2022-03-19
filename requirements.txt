@@ -2,3 +2,4 @@ ftfy
 git+https://github.com/openai/CLIP.git
 pytest
 pytorch_lightning
+omegaconf==2.1.1
