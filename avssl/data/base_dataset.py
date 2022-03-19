@@ -1,8 +1,8 @@
 # Ref: https://github.com/wnhsu/ResDAVEnet-VQ/blob/master/dataloaders/image_caption_dataset.py
 # Author: David Harwath, Wei-Ning Hsu
 
-import torch
 import librosa
+import torch
 from PIL import Image
 from torch.utils.data import Dataset
 

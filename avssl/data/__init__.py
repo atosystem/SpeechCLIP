@@ -1,3 +1,3 @@
-from .image_transforms import get_simple_image_transform
 from .flickr_dataset import FlickrImageCaptionDataset
+from .image_transforms import get_simple_image_transform
 from .places_dataset import PlacesImageCaptionDataset

@@ -1,6 +1,6 @@
-import os
 import json
 import logging
+import os
 
 from .base_dataset import BaseImageCaptionDataset
 
@@ -22,11 +22,7 @@ class PlacesImageCaptionDataset(BaseImageCaptionDataset):
         self.image_base_path = image_base_path
 
         for i in len(self.data):
-            self.data[i]["wav"] = os.path.join(
-                audio_base_path, self.data[i]["wav"]
-            )
-            self.data[i]["image"] = os.path.join(
-                image_base_path, self.data[i]["image"]
-            )
+            self.data[i]["wav"] = os.path.join(audio_base_path, self.data[i]["wav"])
+            self.data[i]["image"] = os.path.join(image_base_path, self.data[i]["image"])
 
         logging.info(f"Places Audio ({self.split}): {len(self.data)} samples")

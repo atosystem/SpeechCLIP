@@ -1,7 +1,7 @@
-from typing import Union, List
 from argparse import Namespace
-from types import SimpleNamespace
 from collections import OrderedDict
+from types import SimpleNamespace
+from typing import List, Union
 
 
 class OrderedNamespace(object):
@@ -89,10 +89,10 @@ class OrderedNamespace(object):
 
     def __ne__(self, other):
         return not self.__eq__(other)
-    
+
     def __len__(self):
         return len(self._odict)
-    
+
     def __iter__(self):
         self._odict.__iter__()
 

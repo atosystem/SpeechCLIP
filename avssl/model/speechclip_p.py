@@ -1,10 +1,11 @@
 from typing import Tuple, Union
+
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
 
 from avssl.base import OrderedNamespace
-from avssl.module import S3prlSpeechEncoder, ClipModel, MeanPoolingLayer
+from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder
 from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel

@@ -1,8 +1,9 @@
 import logging
+from typing import Tuple, Union
+
 import torch
-from torch import nn
 from s3prl import hub
-from typing import Union, Tuple
+from torch import nn
 
 from avssl.util import init_weights
 
