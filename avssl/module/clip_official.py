@@ -3,6 +3,17 @@ import torch
 from PIL import Image
 from torch import nn
 
+_clip_models = {
+    "RN50",
+    "RN101",
+    "RN50x4",
+    "RN50x16",
+    "RN50x64",
+    "ViT-B/32",
+    "ViT-B/16",
+    "ViT-L/14",
+}
+
 
 class ClipModel(nn.Module):
     def __init__(
@@ -22,6 +33,7 @@ class ClipModel(nn.Module):
             text_encoder_trainable (bool, optional): Whether to train the text encoder. Defaults to False.
         """
         super().__init__()
+        assert name in _clip_models
 
         self.name = name
         self.device = device

@@ -1,9 +1,10 @@
 import torch
 from avssl.module import ClipModel
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 def test_clip():
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     model = ClipModel(
         "ViT-B/32",
         device=device,

@@ -11,7 +11,7 @@ def check_distance(feat_1, feat_2):
     return (feat_1 - feat_2).abs().mean() < MAX_TOLERANCE_DISTANCE
 
 
-def try_model(model, model_name="apc"):
+def try_model(model, model_name):
     with torch.no_grad():
         wav_len = [80000 - 97 * i for i in range(8)]
         wav = [torch.randn(l, dtype=torch.float).to(device) for l in wav_len]
@@ -24,6 +24,7 @@ def try_model(model, model_name="apc"):
         assert isinstance(feat_hid, (tuple, list))
         assert isinstance(feat_hid[0], torch.Tensor)
         assert feat_hid[0].shape[0] == 8
+        assert feat_hid[0].shape[-1] == model.out_dim
         assert check_distance(feat_layers_2[0], feat_hid[2])
         assert check_distance(feat_layers_2[1], feat_hid[max_hidden - 1])
 
