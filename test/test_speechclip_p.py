@@ -1,6 +1,6 @@
 import argparse
 
-from avssl.task import TrainParallelSpeechClip
+from avssl.model import ParallelSpeechClip
 
 
 def test_speechclip_p():
@@ -14,4 +14,4 @@ def test_speechclip_p():
         save_path="exp/sc_p_tmp",
     )
 
-    ParallelSpeechClipTrainer(args)
+    ParallelSpeechClip(args)
