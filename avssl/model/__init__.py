@@ -1,1 +1,1 @@
-from .speechclip_p import ParallelSpeechClip
+from .speechclip_p import ParallelSpeechClip, ParallelSpeechClip_AttPool

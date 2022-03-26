@@ -1,0 +1,46 @@
+data:
+  dataset:
+    name: flickr
+    dataset_root: /work/vjsalt22/dataset/flickr/
+  batch_size: 6
+  split_ratio: 0.9
+
+clip:
+  name: ViT-B/32
+  image_encoder_trainable: false
+  text_encoder_trainable: false
+
+audio_encoder:
+  type: s3prl
+  name: hubert
+  pretrained: true
+  trainable: true
+  feat_select_idx: last_hidden_state
+  layer_drop: 0.05
+  max_audio_len: 240000
+  pooling:
+    type: attentative_pooling
+    audio_projection_type: pre
+  optim:
+    name: Adam
+    args:
+      lr: 1.e-4
+      weight_decay: 1.e-6
+  scheduler:
+    name: linear_warmup_decay
+    warmup: 500
+    max_step: 5000
+    final_lr: 1.e-8
+
+evaluate:
+  recall_at: [1,5,10]
+
+trainer:
+  max_steps: 5000
+  gradient_clip_val: 10
+  accumulate_grad_batches: 4
+  check_val_every_n_epoch: 1
+  precision: 16
+  logger: true
+  default_root_dir: ./exp/sc_p_attPool
+  limit_train_batches: 4

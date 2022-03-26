@@ -1,1 +1,1 @@
-from .train_speechclip_p import TrainParallelSpeechClip
+from .train_speechclip_p import TrainParallelSpeechClip, TrainParallelSpeechClipAttPool

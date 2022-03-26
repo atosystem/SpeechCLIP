@@ -1,6 +1,7 @@
 # Other
 .DS_Store
 exp/
+.tmp_code
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
