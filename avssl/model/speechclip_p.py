@@ -267,6 +267,14 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
 
+        # print(config)
+        # print(config.to_dict())
+        # print()
+        # print(config._odict)
+        # # print(config.keys())
+        # # print(dir(config))
+        # exit(1)
+
         self.audio_encoder_type = config.audio_encoder.type
         if self.audio_encoder_type == "s3prl":
             self.audio_encoder = S3prlSpeechEncoder(**config.audio_encoder)
@@ -285,6 +293,7 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         )
 
         self.audio_pooling_type = config.audio_encoder.pooling.type
+        self.audio_pooling_degraded = config.audio_encoder.pooling.degraded
 
         if self.audio_pooling_type == "attentative_pooling":
             self.audio_pooling = AttentativePoolingLayer(
@@ -292,6 +301,7 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
                 if not self.audio_feat_projection_type == "pre"
                 else self.clip.out_dim,
                 dim_B=self.clip.out_dim,
+                degraded=self.audio_pooling_degraded,
             )
         else:
             raise NotImplementedError(
@@ -413,14 +423,18 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         return audio_feat, image_feat
 
     def training_step(self, batch, batch_idx):
-        loss, audio_feat, image_feat = self.forward(batch, cal_loss=True)
+        loss, _, _ = self.forward(batch, cal_loss=True)
         self.log("train_loss", loss)
+        # return loss
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
+        # print("val")
         loss, prePool_audio, prePool_image, _, _ = self.forward(
             batch, cal_loss=True, ret_pre_pooling=True
         )
+        prePool_audio = prePool_audio[0].cpu(), prePool_audio[1].cpu()
+        prePool_image = prePool_image.cpu()
         self.log("val_loss", loss)
         return {
             "loss": loss,
@@ -442,9 +456,13 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
 
         all_image_feat = torch.cat(all_image_feat, dim=0).float()
         print("[validation_epoch] Total data pairs #{}".format(all_image_feat.shape[0]))
+        # all_image_feat = all_image_feat.cuda()
 
         with torch.no_grad():
             for audio_feat, audio_feat_len in zip(all_audio_feat, all_audio_len):
+                audio_feat = audio_feat.cuda()
+                audio_feat_len = audio_feat_len.cuda()
+
                 if self.audio_feat_projection_type == "pre":
                     audio_feat = self.audio_feat_projection(audio_feat)
 
@@ -452,42 +470,55 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
                     input_A_lens=audio_feat_len, max_Alen=audio_feat.shape[1]
                 )
 
-                audio_pooled_feats = self.audio_pooling.cal_batch_embedding(
-                    input_A=audio_feat.permute(0, 2, 1),
-                    input_B=all_image_feat.permute(1, 0),
-                    intput_msk=mask,
-                )
+                scores = []
+                for image_offset in range(0,all_image_feat.shape[0],all_image_feat.shape[0]//2):
+                    _image_feats = all_image_feat[image_offset:image_offset+all_image_feat.shape[0]//2,:].cuda()
 
-                # audio_pooled_feats.shape = (bsz, audio_dim, len_of_all_data_pairs)
-                assert audio_pooled_feats.shape == (
-                    audio_feat.shape[0],
-                    audio_feat.shape[2],
-                    all_image_feat.shape[0],
-                )
+                    _audio_pooled_feats = self.audio_pooling.cal_batch_embedding(
+                        input_A=audio_feat.permute(0, 2, 1),
+                        input_B=_image_feats.permute(1, 0),
+                        intput_msk=mask,
+                    )
 
-                # audio_pooled_feats.shape = (bsz, len_of_all_data_pairs, audio_dim)
-                audio_pooled_feats = audio_pooled_feats.permute(0, 2, 1)
+                    # audio_pooled_feats.shape = (bsz, audio_dim, len_of_all_data_pairs)
+                    assert _audio_pooled_feats.shape == (
+                        audio_feat.shape[0],
+                        audio_feat.shape[2],
+                        _image_feats.shape[0],
+                    )
 
-                if self.audio_feat_projection_type == "post":
-                    audio_pooled_feats = self.audio_feat_projection(audio_pooled_feats)
+                    # audio_pooled_feats.shape = (bsz, len_of_all_data_pairs, audio_dim)
+                    _audio_pooled_feats = _audio_pooled_feats.permute(0, 2, 1)
 
-                audio_pooled_feats = audio_pooled_feats / audio_pooled_feats.norm(
-                    dim=-1, keepdim=True
-                )
-                all_image_feat = all_image_feat / all_image_feat.norm(
-                    dim=-1, keepdim=True
-                )
+                    if self.audio_feat_projection_type == "post":
+                        _audio_pooled_feats = self._audio_pooled_feats(_audio_pooled_feats)
 
-                score = torch.matmul(audio_pooled_feats, all_image_feat.T)
-                score = torch.diagonal(score, offset=0, dim1=1, dim2=2)
+                    _audio_pooled_feats = _audio_pooled_feats / _audio_pooled_feats.norm(
+                        dim=-1, keepdim=True
+                    )
+                
+                    _image_feats = _image_feats / _image_feats.norm(
+                        dim=-1, keepdim=True
+                    )
 
+                    _score = torch.matmul(_audio_pooled_feats, _image_feats.T)
+                    _score = torch.diagonal(_score, offset=0, dim1=1, dim2=2)
+
+                    # _score.shape (bsz, len_of_all_data_pairs // n )
+                    assert _score.shape == (
+                        _audio_pooled_feats.shape[0],
+                        _image_feats.shape[0],
+                    )
+                    scores.append(_score)
+
+                scores = torch.cat( scores, dim=1)
+                scores = scores.cpu()
                 # score.shape (bsz, len_of_all_data_pairs )
-                assert score.shape == (
-                    audio_pooled_feats.shape[0],
+                assert scores.shape == (
+                    audio_feat.shape[0],
                     all_image_feat.shape[0],
                 )
-
-                results_scores.append(score)
+                results_scores.append(scores)
 
         results_scores = torch.cat(results_scores, dim=0)
 
@@ -507,7 +538,7 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
             )
             recall.append(_v)
 
-            self.log("val_recall_{}".format(k), _v)
+        self.log( "val_recall", { "val_recall_{}".format(k): recall[i]  for i,k in enumerate(self.recall_at)})
 
     def configure_optimizers(self):
         optimizers = []

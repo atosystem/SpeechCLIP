@@ -62,7 +62,7 @@ class MeanPoolingLayer(nn.Module):
 
 
 class AttentativePoolingLayer(nn.Module):
-    def __init__(self, dim_A: int, dim_B: int) -> None:
+    def __init__(self, dim_A: int, dim_B: int,degraded: bool = False) -> None:
         """Attentative Pooling
 
         Args:
@@ -73,10 +73,17 @@ class AttentativePoolingLayer(nn.Module):
 
         self.dim_A = dim_A
         self.dim_B = dim_B
+        self.degraded = degraded
 
-        # learnable
-        self.U = torch.nn.Parameter(torch.randn(self.dim_A, self.dim_B))
-        self.U.requires_grad = True
+        if not degraded:
+            # learnable
+            self.U = torch.nn.Parameter(torch.randn(self.dim_A, self.dim_B))
+            self.U.requires_grad = True
+        else:
+            # not learnabble
+            assert self.dim_A == self.dim_B
+            self.U = torch.nn.Parameter(torch.eye(self.dim_A))
+            self.U.requires_grad = False
 
         self.softmaxLayer = torch.nn.Softmax(dim=-1)
 
