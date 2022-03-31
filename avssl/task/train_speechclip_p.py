@@ -107,7 +107,7 @@ class TrainParallelSpeechClip(BaseTask):
         )
         dv_loader = DataLoader(
             dv_set,
-            batch_size=config.data.batch_size,
+            batch_size=config.data.dev_batch_size,
             shuffle=False,
             num_workers=config.njobs,
             pin_memory=True,
