@@ -293,7 +293,10 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         )
 
         self.audio_pooling_type = config.audio_encoder.pooling.type
-        self.audio_pooling_degraded = config.audio_encoder.pooling.degraded
+        if hasattr(config.audio_encoder.pooling, 'degraded'):
+            self.audio_pooling_degraded = config.audio_encoder.pooling.degraded
+        else:
+            self.audio_pooling_degraded = False
 
         if self.audio_pooling_type == "attentative_pooling":
             self.audio_pooling = AttentativePoolingLayer(
@@ -472,7 +475,7 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
 
                 scores = []
                 for image_offset in range(0,all_image_feat.shape[0],all_image_feat.shape[0]//2):
-                    _image_feats = all_image_feat[image_offset:image_offset+all_image_feat.shape[0]//2,:].cuda()
+                    _image_feats = all_image_feat[ image_offset:image_offset + all_image_feat.shape[0] //2,:].cuda()
 
                     _audio_pooled_feats = self.audio_pooling.cal_batch_embedding(
                         input_A=audio_feat.permute(0, 2, 1),
@@ -523,21 +526,27 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         results_scores = torch.cat(results_scores, dim=0)
 
         score_rank = torch.argsort(results_scores, dim=1, descending=True)
+        print(score_rank)
+        print(score_rank.shape)
+        print(torch.arange(
+            results_scores.shape[1], device=results_scores.device, dtype=torch.long
+        ).reshape(-1, 1))
         # print(score_rank)
         score_rank = score_rank == torch.arange(
             results_scores.shape[1], device=results_scores.device, dtype=torch.long
         ).reshape(-1, 1)
+        print(score_rank)
         # print(score_rank)
 
         recall = []
 
         for k in self.recall_at:
             _v = (
-                torch.sum(score_rank[:, :k].reshape(-1, 1), dim=0).item()
+                torch.sum( score_rank[:, :k].reshape(-1, 1), dim=0 ).item()
                 / all_image_feat.shape[0]
             )
             recall.append(_v)
-
+        
         self.log( "val_recall", { "val_recall_{}".format(k): recall[i]  for i,k in enumerate(self.recall_at)})
 
     def configure_optimizers(self):

@@ -45,3 +45,4 @@ trainer:
   logger: true
   default_root_dir: ./exp/sc_p_attPool
   log_every_n_steps: 2
+  limit_val_batches: 16

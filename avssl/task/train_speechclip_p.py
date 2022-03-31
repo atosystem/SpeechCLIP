@@ -253,4 +253,5 @@ class TrainParallelSpeechClipAttPool(BaseTask):
             **config.trainer,
         )
 
-        trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+        trainer.validate(model,dv_loader,ckpt_path=config.ckpt)
+        # trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)

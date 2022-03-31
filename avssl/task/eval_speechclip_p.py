@@ -68,8 +68,6 @@ class EvalParallelSpeechClip(BaseTask):
                 self.args.device
             )
             config = model.config
-            print(config)
-            exit(1)
         else:
             self.args.ckpt = None
             config = yaml.load(open(self.args.config, "r"), Loader=yaml.FullLoader)
