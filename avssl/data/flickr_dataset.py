@@ -43,11 +43,10 @@ class FlickrImageCaptionDataset(BaseImageCaptionDataset):
                 wav_names_to_paths[name].append(os.path.join(wav_base_path, p))
 
         id_pairs_path = os.path.join(self.dataset_root, "Flickr8k_idPairs.json")
-        with open(id_pairs_path,"r") as f:
+        with open(id_pairs_path, "r") as f:
             _data = json.load(f)
             id2Filename = _data["id2Filename"]
             filename2Id = _data["filename2Id"]
-        
 
         with open(image_list_txt, "r") as fp:
             for line in fp:
@@ -59,6 +58,12 @@ class FlickrImageCaptionDataset(BaseImageCaptionDataset):
                 image_path = os.path.join(dataset_root, "Images", line)
                 if image_name in wav_names:
                     for p in wav_names_to_paths[image_name]:
-                        self.data.append({"wav": p, "image": image_path,"id": filename2Id[image_name]})
+                        self.data.append(
+                            {
+                                "wav": p,
+                                "image": image_path,
+                                "id": filename2Id[image_name],
+                            }
+                        )
 
         logging.info(f"Flickr8k ({self.split}): {len(self.data)} samples")

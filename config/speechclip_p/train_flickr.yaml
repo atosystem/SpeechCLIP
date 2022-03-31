@@ -2,13 +2,19 @@ data:
   dataset:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
-  batch_size: 6
+  batch_size: 32
+  dev_batch_size: 32
   split_ratio: 0.9
 
 clip:
   name: ViT-B/32
   image_encoder_trainable: false
   text_encoder_trainable: false
+
+cl_loss:
+  temperature: 1
+  base_temperature: 1
+  contrast_mode: all
 
 audio_encoder:
   type: s3prl
@@ -39,3 +45,5 @@ trainer:
   precision: 16
   logger: true
   default_root_dir: exp/sc_p_tmp
+  limit_train_batches: 4
+  limit_val_batches: 4

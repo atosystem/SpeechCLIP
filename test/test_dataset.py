@@ -42,11 +42,12 @@ def try_dataset(dataset):
     assert image.shape == (3, 224, 224)
     assert isinstance(image, torch.Tensor)
 
+
 def try_Flickr(dataset):
     audio_feat, image, id = dataset[0]
     assert audio_feat.ndim == 1
     assert image.shape == (3, 224, 224)
-    assert isinstance(id,int)
+    assert isinstance(id, int)
     assert isinstance(image, torch.Tensor)
 
 

@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from avssl.base import OrderedNamespace
-from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder
+from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder, SupConLoss
 from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
@@ -37,7 +37,11 @@ class ParallelSpeechClip(BaseLightningModel):
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = SupConLoss(
+            temperature=config.cl_loss.temperature,
+            contrast_mode=config.cl_loss.contrast_mode,
+            base_temperature=config.cl_loss.base_temperature,
+        )
 
     def forward_audio(
         self,
@@ -83,7 +87,8 @@ class ParallelSpeechClip(BaseLightningModel):
         cal_loss: bool = False,
         full_utt: bool = False,
     ) -> dict:
-        wav, wav_len, images = batch
+        wav, wav_len, images, id = batch
+        id = torch.cat(id, dim=0)
         audio_feat, audio_feat_len = self.forward_audio(wav, wav_len, full_utt=full_utt)
         image_feat = self.forward_image(images)
 
@@ -91,16 +96,10 @@ class ParallelSpeechClip(BaseLightningModel):
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
 
-            logit_scale = self.logit_scale.exp()
-            logits_per_audio = logit_scale * audio_feat @ image_feat.t()
-            logits_per_image = logits_per_audio.t()
-
-            labels = torch.arange(
-                len(logits_per_audio), device=logits_per_audio.device, dtype=torch.long
+            loss = self.criterion(
+                features=torch.stack([audio_feat, image_feat], dim=1),
+                labels=id,
             )
-            loss_audio = self.criterion(logits_per_audio, labels)
-            loss_image = self.criterion(logits_per_image, labels)
-            loss = (loss_audio + loss_image) / 2
 
             return loss, audio_feat, image_feat
 

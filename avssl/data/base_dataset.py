@@ -87,7 +87,7 @@ class BaseImageCaptionDataset(Dataset):
         audio_feat = self._LoadAudio(self.data[index]["wav"])
         image = self._LoadImage(self.data[index]["image"])
         if "id" in self.data[index]:
-            return audio_feat, image, self.data[index]["id"]
+            return audio_feat, image, torch.LongTensor([self.data[index]["id"]])
         else:
             return audio_feat, image
 
