@@ -42,6 +42,13 @@ def try_dataset(dataset):
     assert image.shape == (3, 224, 224)
     assert isinstance(image, torch.Tensor)
 
+def try_Flickr(dataset):
+    audio_feat, image, id = dataset[0]
+    assert audio_feat.ndim == 1
+    assert image.shape == (3, 224, 224)
+    assert isinstance(id,int)
+    assert isinstance(image, torch.Tensor)
+
 
 def test_dataset():
     image_transform = get_simple_image_transform(224)
@@ -49,7 +56,7 @@ def test_dataset():
     # Test Flickr8k
     for split, length in [("train", 30000), ("dev", 5000), ("test", 5000)]:
         dataset = get_flickr_dataset(split, image_transform)
-        try_dataset(dataset)
+        try_Flickr(dataset)
         assert len(dataset) == length
         del dataset
 
