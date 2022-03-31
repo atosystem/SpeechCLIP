@@ -41,7 +41,7 @@ class TrainParallelSpeechClip(BaseTask):
         parser.add_argument("--njobs", type=int, default=0, help="Number of workers.")
         parser.add_argument("--seed", type=int, default=7122, help="Fix random seed.")
         parser.add_argument(
-            "--save_path", type=str, default="./exp/", help="Directory to save ckpts."
+            "--save_path", type=str, default="", help="Directory to save ckpts."
         )
 
         return parser
@@ -66,6 +66,8 @@ class TrainParallelSpeechClip(BaseTask):
             model = ParallelSpeechClip.load_from_checkpoint(self.args.ckpt).to(
                 self.args.device
             )
+            if self.args.save_path != "":
+                model.config.save_path = self.args.save_path
             config = model.config
         else:
             self.args.ckpt = None
@@ -105,7 +107,7 @@ class TrainParallelSpeechClip(BaseTask):
         )
         dv_loader = DataLoader(
             dv_set,
-            batch_size=config.data.batch_size,
+            batch_size=config.data.dev_batch_size,
             shuffle=False,
             num_workers=config.njobs,
             pin_memory=True,
@@ -126,6 +128,9 @@ class TrainParallelSpeechClip(BaseTask):
         )
 
         trainer = Trainer(
+            resume_from_checkpoint=self.args.ckpt
+            if self.args.ckpt is not None
+            else None,
             callbacks=[TQDMProgressBar(), model_checkpoint],
             enable_progress_bar=True,
             gpus=config.gpus,

@@ -2,13 +2,22 @@ data:
   dataset:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
-  batch_size: 6
+  batch_size: 32
+  dev_batch_size: 8
   split_ratio: 0.9
 
 clip:
   name: ViT-B/32
   image_encoder_trainable: false
   text_encoder_trainable: false
+
+cl_loss:
+  temperature: 1
+  base_temperature: 1
+  contrast_mode: all
+
+retrieval:
+  recall_at: [1,5,10]
 
 audio_encoder:
   type: s3prl
@@ -27,15 +36,17 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 500
-    max_step: 5000
+    warmup: 700
+    max_step: 7000
     final_lr: 1.e-8
 
 trainer:
-  max_steps: 5000
+  max_steps: 7000
   gradient_clip_val: 10
   accumulate_grad_batches: 4
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  default_root_dir: exp/sc_p_tmp
+  default_root_dir: exp/sc_p
+  # limit_train_batches: 2
+  # limit_val_batches: 4
