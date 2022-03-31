@@ -86,6 +86,9 @@ class OrderedNamespace(object):
     def __dict__(self):
         return self._odict
 
+    def __getstate__(self):
+        return self.__dict__
+
     def __setstate__(self, state):
         super(OrderedNamespace, self).__setattr__("_odict", OrderedDict())
         self._odict.update(state)
