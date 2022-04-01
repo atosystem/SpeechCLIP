@@ -136,5 +136,5 @@ class TrainParallelSpeechClip(BaseTask):
             gpus=config.gpus,
             **config.trainer,
         )
-
+        # trainer.validate(model,dv_loader,ckpt_path=config.ckpt)
         trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)

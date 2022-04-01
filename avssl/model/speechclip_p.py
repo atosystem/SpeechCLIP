@@ -151,8 +151,8 @@ class ParallelSpeechClip(BaseLightningModel):
         )
         score_per_image = score_per_audio.T
 
-        score_per_audio = torch.argsort(score_per_audio, dim=1, descending=True)
-        score_per_image = torch.argsort(score_per_image, dim=1, descending=True)
+        score_per_audio = torch.argsort(score_per_audio, dim=1, descending=True).cpu()
+        score_per_image = torch.argsort(score_per_image, dim=1, descending=True).cpu()
 
         assert score_per_audio.shape == (len(all_audo_feats_id), len(all_img_feats_id))
         assert score_per_image.shape == (len(all_img_feats_id), len(all_audo_feats_id))
@@ -184,19 +184,37 @@ class ParallelSpeechClip(BaseLightningModel):
 
         recall_results_AI = {}
         recall_results_IA = {}
-        # AI
+        # AI (many to one)
         for k in self.recall_at:
             recall_results_AI["recall@{}".format(k)] = (
-                torch.sum(rank_AI[:, :k]) / rank_AI.shape[1]
+                torch.sum(
+                    torch.max(
+                        rank_AI[:, :k].reshape(rank_AI.shape[0], k), dim=1, keepdim=True
+                    )[0]
+                )
+                / rank_AI.shape[0]
             )
-        recall_results_AI["recall_random".format(k)] = k / rank_AI.shape[1]
+        recall_results_AI["recall_random@1"] = k / rank_AI.shape[0]
 
-        # IA
+        # IA (one to many)
         for k in self.recall_at:
             recall_results_IA["recall@{}".format(k)] = (
-                torch.sum(rank_IA[:, :k]) / rank_IA.shape[1]
+                torch.sum(
+                    torch.max(
+                        rank_IA[:, :k].reshape(rank_IA.shape[0], k), dim=1, keepdim=True
+                    )[0]
+                )
+                / rank_IA.shape[0]
             )
-        recall_results_IA["recall_random".format(k)] = k / rank_IA.shape[1]
+        # average one image corresponds to len(all_audo_feats) // len(all_img_feats) audio
+        recall_results_IA["recall_random@1"] = 1
+        _recall_at = 1
+        for i in range(len(all_audo_feats) // len(all_img_feats)):
+            recall_results_IA["recall_random@1"] *= (
+                len(all_audo_feats) - _recall_at - i
+            ) / (len(all_audo_feats) - i)
+
+        recall_results_IA["recall_random@1"] = 1 - recall_results_IA["recall_random@1"]
 
         self.log("val_recall_AI", recall_results_AI)
         self.log("val_recall_IA", recall_results_IA)
