@@ -11,6 +11,14 @@ clip:
   image_encoder_trainable: false
   text_encoder_trainable: false
 
+cl_loss:
+  temperature: 1
+  base_temperature: 1
+  contrast_mode: all
+
+retrieval:
+  recall_at: [1,5,10]
+
 audio_encoder:
   type: s3prl
   name: hubert
@@ -21,7 +29,7 @@ audio_encoder:
   max_audio_len: 138581
   pooling:
     type: attentative_pooling
-    degraded: True
+    degraded: true
     audio_projection_type: pre
   optim:
     name: Adam
@@ -30,19 +38,28 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 500
-    max_step: 5000
+    warmup: 7000
+    max_step: 70000
     final_lr: 1.e-8
 
-evaluate:
-  recall_at: [1,5,10]
-
 trainer:
-  max_steps: 5000
+  max_steps: 70000
   gradient_clip_val: 10
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 8
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
   default_root_dir: ./exp/sc_p_attPool_degraded
   log_every_n_steps: 2
+  num_sanity_val_steps: 0
+  # limit_train_batches: 2
+  # limit_val_batches: 4
+
+
+# learnable U
+#   | Name                  | Type                    | Params
+# 0 | audio_encoder         | S3prlSpeechEncoder      | 94.7 M
+# 1 | clip                  | ClipModel               | 151 M 
+# 2 | audio_feat_projection | Linear                  | 393 K 
+# 3 | audio_pooling         | AttentativePoolingLayer | 262 K 
+# 4 | criterion             | SupConLoss              | 0    

@@ -62,7 +62,7 @@ class MeanPoolingLayer(nn.Module):
 
 
 class AttentativePoolingLayer(nn.Module):
-    def __init__(self, dim_A: int, dim_B: int,degraded: bool = False) -> None:
+    def __init__(self, dim_A: int, dim_B: int, degraded: bool = False) -> None:
         """Attentative Pooling
 
         Args:
@@ -280,8 +280,9 @@ class AttentativePoolingLayer(nn.Module):
 
         return output_A, output_B
 
+
 class AttentativePoolingLayer(nn.Module):
-    def __init__(self, dim_A: int, dim_B: int,degraded: bool = False) -> None:
+    def __init__(self, dim_A: int, dim_B: int, degraded: bool = False) -> None:
         """Attentative Pooling
 
         Args:
@@ -401,7 +402,14 @@ class AttentativePoolingLayer(nn.Module):
         _align = torch.matmul(input_A.permute(0, 2, 1), _align)
         _align = torch.tanh(_align)
 
-        # _align.shape: bsz, seq_len_A, len_B
+        # _align.shape: bsz, seq_len_A, #imageSamples
+        assert _align.shape == (
+            input_A.shape[0],
+            input_A.shape[2],
+            input_B.shape[1],
+        ), "{} {}".format(
+            _align.shape, (input_A.shape[0], input_A.shape[2], input_B.shape[1])
+        )
 
         # add mask on _align
         if intput_msk is not None:
@@ -417,7 +425,7 @@ class AttentativePoolingLayer(nn.Module):
             _align = _align + intput_msk
 
         _score = F.softmax(_align, dim=1)
-        output_A = torch.matmul(input_A, _score).squeeze()
+        output_A = torch.matmul(input_A, _score)
 
         return output_A
 

@@ -43,6 +43,21 @@ class TrainParallelSpeechClip(BaseTask):
         parser.add_argument(
             "--save_path", type=str, default="", help="Directory to save ckpts."
         )
+        parser.add_argument(
+            "--train", action="store_true", default=True, help="Train model"
+        )
+        parser.add_argument(
+            "--eval",
+            action="store_true",
+            default=False,
+            help="Evaluate model on dev set",
+        )
+        parser.add_argument(
+            "--test",
+            action="store_true",
+            default=False,
+            help="Inference model on test set",
+        )
 
         return parser
 
@@ -77,12 +92,18 @@ class TrainParallelSpeechClip(BaseTask):
         self.config = config
 
         if config.data.dataset.name == "flickr":
-            tr_set = FlickrImageCaptionDataset(
-                split="train", load_image=False, **config.data.dataset
-            )
-            dv_set = FlickrImageCaptionDataset(
-                split="dev", load_image=False, **config.data.dataset
-            )
+            if self.args.train:
+                tr_set = FlickrImageCaptionDataset(
+                    split="train", load_image=False, **config.data.dataset
+                )
+            if self.args.train or self.args.eval:
+                dv_set = FlickrImageCaptionDataset(
+                    split="dev", load_image=False, **config.data.dataset
+                )
+            if self.args.test:
+                test_set = FlickrImageCaptionDataset(
+                    split="test", load_image=False, **config.data.dataset
+                )
         elif config.data.dataset.name == "places":
             tr_set = PlacesImageCaptionDataset(
                 split="train", load_image=False, **config.data.dataset
@@ -96,24 +117,36 @@ class TrainParallelSpeechClip(BaseTask):
         else:
             raise NotImplementedError(f"Unknown dataset {config.data.dataset.name}")
 
-        tr_loader = DataLoader(
-            tr_set,
-            batch_size=config.data.batch_size,
-            shuffle=True,
-            num_workers=config.njobs,
-            pin_memory=True,
-            drop_last=True,
-            collate_fn=collate_image_captions,
-        )
-        dv_loader = DataLoader(
-            dv_set,
-            batch_size=config.data.dev_batch_size,
-            shuffle=False,
-            num_workers=config.njobs,
-            pin_memory=True,
-            drop_last=False,
-            collate_fn=collate_image_captions,
-        )
+        if self.args.train:
+            tr_loader = DataLoader(
+                tr_set,
+                batch_size=config.data.batch_size,
+                shuffle=True,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=True,
+                collate_fn=collate_image_captions,
+            )
+        if self.args.train or self.args.eval:
+            dv_loader = DataLoader(
+                dv_set,
+                batch_size=config.data.dev_batch_size,
+                shuffle=False,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=False,
+                collate_fn=collate_image_captions,
+            )
+        if self.args.test:
+            test_loader = DataLoader(
+                test_set,
+                batch_size=config.data.dev_batch_size,
+                shuffle=False,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=False,
+                collate_fn=collate_image_captions,
+            )
 
         if config.save_path != "":
             config.trainer.default_root_dir = config.save_path
@@ -136,8 +169,14 @@ class TrainParallelSpeechClip(BaseTask):
             gpus=config.gpus,
             **config.trainer,
         )
-        # trainer.validate(model,dv_loader,ckpt_path=config.ckpt)
-        trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+
+        if self.args.train:
+            trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+        if self.args.eval:
+            trainer.validate(model, dv_loader, ckpt_path=config.ckpt)
+        if self.args.test:
+            trainer.test(model, test_loader, ckpt_path=config.ckpt)
+
 
 class TrainParallelSpeechClipAttPool(BaseTask):
     def __init__(self):
@@ -164,6 +203,21 @@ class TrainParallelSpeechClipAttPool(BaseTask):
         parser.add_argument(
             "--save_path", type=str, default="", help="Directory to save ckpts."
         )
+        parser.add_argument(
+            "--train", action="store_true", default=True, help="Train model"
+        )
+        parser.add_argument(
+            "--eval",
+            action="store_true",
+            default=False,
+            help="Evaluate model on dev set",
+        )
+        parser.add_argument(
+            "--test",
+            action="store_true",
+            default=False,
+            help="Inference model on test set",
+        )
 
         return parser
 
@@ -187,6 +241,8 @@ class TrainParallelSpeechClipAttPool(BaseTask):
             model = ParallelSpeechClip_AttPool.load_from_checkpoint(self.args.ckpt).to(
                 self.args.device
             )
+            if self.args.save_path != "":
+                model.config.save_path = self.args.save_path
             config = model.config
         else:
             self.args.ckpt = None
@@ -196,12 +252,18 @@ class TrainParallelSpeechClipAttPool(BaseTask):
         self.config = config
 
         if config.data.dataset.name == "flickr":
-            tr_set = FlickrImageCaptionDataset(
-                split="train", load_image=False, **config.data.dataset
-            )
-            dv_set = FlickrImageCaptionDataset(
-                split="dev", load_image=False, **config.data.dataset
-            )
+            if self.args.train:
+                tr_set = FlickrImageCaptionDataset(
+                    split="train", load_image=False, **config.data.dataset
+                )
+            if self.args.train or self.args.eval:
+                dv_set = FlickrImageCaptionDataset(
+                    split="dev", load_image=False, **config.data.dataset
+                )
+            if self.args.test:
+                test_set = FlickrImageCaptionDataset(
+                    split="test", load_image=False, **config.data.dataset
+                )
         elif config.data.dataset.name == "places":
             tr_set = PlacesImageCaptionDataset(
                 split="train", load_image=False, **config.data.dataset
@@ -215,24 +277,36 @@ class TrainParallelSpeechClipAttPool(BaseTask):
         else:
             raise NotImplementedError(f"Unknown dataset {config.data.dataset.name}")
 
-        tr_loader = DataLoader(
-            tr_set,
-            batch_size=config.data.batch_size,
-            shuffle=True,
-            num_workers=config.njobs,
-            pin_memory=True,
-            drop_last=True,
-            collate_fn=collate_image_captions,
-        )
-        dv_loader = DataLoader(
-            dv_set,
-            batch_size=config.data.val_batch_size,
-            shuffle=False,
-            num_workers=config.njobs,
-            pin_memory=True,
-            drop_last=False,
-            collate_fn=collate_image_captions,
-        )
+        if self.args.train:
+            tr_loader = DataLoader(
+                tr_set,
+                batch_size=config.data.batch_size,
+                shuffle=True,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=True,
+                collate_fn=collate_image_captions,
+            )
+        if self.args.train or self.args.eval:
+            dv_loader = DataLoader(
+                dv_set,
+                batch_size=config.data.dev_batch_size,
+                shuffle=False,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=False,
+                collate_fn=collate_image_captions,
+            )
+        if self.args.test:
+            test_loader = DataLoader(
+                test_set,
+                batch_size=config.data.dev_batch_size,
+                shuffle=False,
+                num_workers=config.njobs,
+                pin_memory=True,
+                drop_last=False,
+                collate_fn=collate_image_captions,
+            )
 
         if config.save_path != "":
             config.trainer.default_root_dir = config.save_path
@@ -253,5 +327,9 @@ class TrainParallelSpeechClipAttPool(BaseTask):
             **config.trainer,
         )
 
-        trainer.validate(model,dv_loader,ckpt_path=config.ckpt)
-        # trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+        if self.args.train:
+            trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+        if self.args.eval:
+            trainer.validate(model, dv_loader, ckpt_path=config.ckpt)
+        if self.args.test:
+            trainer.test(model, test_loader, ckpt_path=config.ckpt)

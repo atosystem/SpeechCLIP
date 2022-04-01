@@ -5,7 +5,14 @@ import torch
 from torch import nn
 
 from avssl.base import OrderedNamespace
-from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder, SupConLoss, AttentativePoolingLayer
+from avssl.module import (
+    AttentativePoolingLayer,
+    ClipModel,
+    MeanPoolingLayer,
+    S3prlSpeechEncoder,
+    SupConLoss,
+    audioImageRetrieval,
+)
 from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
@@ -151,70 +158,17 @@ class ParallelSpeechClip(BaseLightningModel):
         )
         score_per_image = score_per_audio.T
 
-        score_per_audio = torch.argsort(score_per_audio, dim=1, descending=True).cpu()
-        score_per_image = torch.argsort(score_per_image, dim=1, descending=True).cpu()
-
-        assert score_per_audio.shape == (len(all_audo_feats_id), len(all_img_feats_id))
-        assert score_per_image.shape == (len(all_img_feats_id), len(all_audo_feats_id))
-
         # AI : Audio -> Image, IA: Image -> Audio
         AI_answers = all_audo_feats_id
         IA_answers = all_img_feats_id
 
-        rank_AI = all_img_feats_id.reshape(1, -1).repeat(AI_answers.shape[0], 1)
-        rank_IA = all_audo_feats_id.reshape(1, -1).repeat(IA_answers.shape[0], 1)
-
-        assert rank_AI.shape == score_per_audio.shape, (
-            rank_AI.shape,
-            score_per_audio.shape,
+        recall_results_AI, recall_results_IA = audioImageRetrieval(
+            score_per_audio=score_per_audio,
+            score_per_image=score_per_image,
+            AI_answers=AI_answers,
+            IA_answers=IA_answers,
+            recall_at=self.recall_at,
         )
-        assert rank_IA.shape == score_per_image.shape, (
-            rank_IA.shape,
-            score_per_image.shape,
-        )
-
-        for r in range(AI_answers.shape[0]):
-            rank_AI[r, :] = rank_AI[r, score_per_audio[r, :]]
-
-        for r in range(IA_answers.shape[0]):
-            rank_IA[r, :] = rank_IA[r, score_per_image[r, :]]
-
-        rank_AI = rank_AI == AI_answers.unsqueeze(-1)
-        rank_IA = rank_IA == IA_answers.unsqueeze(-1)
-
-        recall_results_AI = {}
-        recall_results_IA = {}
-        # AI (many to one)
-        for k in self.recall_at:
-            recall_results_AI["recall@{}".format(k)] = (
-                torch.sum(
-                    torch.max(
-                        rank_AI[:, :k].reshape(rank_AI.shape[0], k), dim=1, keepdim=True
-                    )[0]
-                )
-                / rank_AI.shape[0]
-            )
-        recall_results_AI["recall_random@1"] = k / rank_AI.shape[0]
-
-        # IA (one to many)
-        for k in self.recall_at:
-            recall_results_IA["recall@{}".format(k)] = (
-                torch.sum(
-                    torch.max(
-                        rank_IA[:, :k].reshape(rank_IA.shape[0], k), dim=1, keepdim=True
-                    )[0]
-                )
-                / rank_IA.shape[0]
-            )
-        # average one image corresponds to len(all_audo_feats) // len(all_img_feats) audio
-        recall_results_IA["recall_random@1"] = 1
-        _recall_at = 1
-        for i in range(len(all_audo_feats) // len(all_img_feats)):
-            recall_results_IA["recall_random@1"] *= (
-                len(all_audo_feats) - _recall_at - i
-            ) / (len(all_audo_feats) - i)
-
-        recall_results_IA["recall_random@1"] = 1 - recall_results_IA["recall_random@1"]
 
         self.log("val_recall_AI", recall_results_AI)
         self.log("val_recall_IA", recall_results_IA)
@@ -267,14 +221,6 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
 
-        # print(config)
-        # print(config.to_dict())
-        # print()
-        # print(config._odict)
-        # # print(config.keys())
-        # # print(dir(config))
-        # exit(1)
-
         self.audio_encoder_type = config.audio_encoder.type
         if self.audio_encoder_type == "s3prl":
             self.audio_encoder = S3prlSpeechEncoder(**config.audio_encoder)
@@ -293,7 +239,7 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         )
 
         self.audio_pooling_type = config.audio_encoder.pooling.type
-        if hasattr(config.audio_encoder.pooling, 'degraded'):
+        if hasattr(config.audio_encoder.pooling, "degraded"):
             self.audio_pooling_degraded = config.audio_encoder.pooling.degraded
         else:
             self.audio_pooling_degraded = False
@@ -313,10 +259,14 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = SupConLoss(
+            temperature=config.cl_loss.temperature,
+            contrast_mode=config.cl_loss.contrast_mode,
+            base_temperature=config.cl_loss.base_temperature,
+        )
 
         # evaluate
-        self.recall_at = config.evaluate.recall_at
+        self.recall_at = config.retrieval.recall_at
 
     def forward_audio(
         self,
@@ -389,7 +339,8 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         full_utt: bool = False,
         ret_pre_pooling: bool = False,
     ) -> dict:
-        wav, wav_len, images = batch
+        wav, wav_len, images, id = batch
+        id = torch.cat(id, dim=0)
         audio_feat, audio_feat_len = self.forward_audio(wav, wav_len, full_utt=True)
         image_feat = self.forward_image(images)
 
@@ -407,40 +358,36 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
 
-            logit_scale = self.logit_scale.exp()
-            logits_per_audio = logit_scale * audio_feat @ image_feat.t()
-            logits_per_image = logits_per_audio.t()
-
-            labels = torch.arange(
-                len(logits_per_audio), device=logits_per_audio.device, dtype=torch.long
+            loss = self.criterion(
+                features=torch.stack([audio_feat, image_feat], dim=1),
+                labels=id,
             )
-            loss_audio = self.criterion(logits_per_audio, labels)
-            loss_image = self.criterion(logits_per_image, labels)
-            loss = (loss_audio + loss_image) / 2
 
             if not ret_pre_pooling:
-                return loss, audio_feat, image_feat
+                return loss, audio_feat, image_feat, id
             else:
-                return loss, prePool_audio, prePool_image, audio_feat, image_feat
+                return loss, prePool_audio, prePool_image, id
 
         return audio_feat, image_feat
 
     def training_step(self, batch, batch_idx):
-        loss, _, _ = self.forward(batch, cal_loss=True)
+        loss, _, _, _ = self.forward(batch, cal_loss=True)
         self.log("train_loss", loss)
         # return loss
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
         # print("val")
-        loss, prePool_audio, prePool_image, _, _ = self.forward(
+        loss, prePool_audio, prePool_image, id = self.forward(
             batch, cal_loss=True, ret_pre_pooling=True
         )
-        prePool_audio = prePool_audio[0].cpu(), prePool_audio[1].cpu()
-        prePool_image = prePool_image.cpu()
+        prePool_audio = prePool_audio[0].detach().cpu(), prePool_audio[1].detach().cpu()
+        prePool_image = prePool_image.detach().cpu()
+        id = id.detach().cpu()
+        loss = loss.detach().cpu()
         self.log("val_loss", loss)
         return {
-            "loss": loss,
+            "id": id,
             "prePool_audio": prePool_audio,
             "prePool_image": prePool_image,
         }
@@ -458,96 +405,110 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
             all_audio_len.append(audio_feat_len)
 
         all_image_feat = torch.cat(all_image_feat, dim=0).float()
-        print("[validation_epoch] Total data pairs #{}".format(all_image_feat.shape[0]))
-        # all_image_feat = all_image_feat.cuda()
+        all_ids = torch.cat([x["id"] for x in validation_step_outputs], dim=0)
+        id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_image_feat)}
+        del all_image_feat
 
-        with torch.no_grad():
-            for audio_feat, audio_feat_len in zip(all_audio_feat, all_audio_len):
-                audio_feat = audio_feat.cuda()
-                audio_feat_len = audio_feat_len.cuda()
+        all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
+        all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
+        all_audo_feats_id = all_ids
 
-                if self.audio_feat_projection_type == "pre":
-                    audio_feat = self.audio_feat_projection(audio_feat)
+        print(
+            "Total #{} images, #{} audio".format(
+                len(all_img_feats_id), len(all_audo_feats_id)
+            )
+        )
 
-                mask = self.audio_pooling.generate_input_msk(
-                    input_A_lens=audio_feat_len, max_Alen=audio_feat.shape[1]
+        for audio_feat, audio_feat_len in zip(all_audio_feat, all_audio_len):
+            audio_feat = audio_feat.to(self.device)
+            audio_feat_len = audio_feat_len.to(self.device)
+
+            if self.audio_feat_projection_type == "pre":
+                audio_feat = self.audio_feat_projection(audio_feat)
+
+            mask = self.audio_pooling.generate_input_msk(
+                input_A_lens=audio_feat_len, max_Alen=audio_feat.shape[1]
+            )
+
+            scores = []
+            for image_offset in range(
+                0, all_img_feats.shape[0], all_img_feats.shape[0] // 2
+            ):
+                _image_feats = all_img_feats[
+                    image_offset : image_offset + all_img_feats.shape[0] // 2, :
+                ].to(self.device)
+
+                if len(_image_feats.shape) == 1:
+                    _image_feats = _image_feats.unsqueeze(0)
+
+                _audio_pooled_feats = self.audio_pooling.cal_batch_embedding(
+                    input_A=audio_feat.permute(0, 2, 1),
+                    input_B=_image_feats.permute(1, 0),
+                    intput_msk=mask,
                 )
 
-                scores = []
-                for image_offset in range(0,all_image_feat.shape[0],all_image_feat.shape[0]//2):
-                    _image_feats = all_image_feat[ image_offset:image_offset + all_image_feat.shape[0] //2,:].cuda()
-
-                    _audio_pooled_feats = self.audio_pooling.cal_batch_embedding(
-                        input_A=audio_feat.permute(0, 2, 1),
-                        input_B=_image_feats.permute(1, 0),
-                        intput_msk=mask,
-                    )
-
-                    # audio_pooled_feats.shape = (bsz, audio_dim, len_of_all_data_pairs)
-                    assert _audio_pooled_feats.shape == (
-                        audio_feat.shape[0],
-                        audio_feat.shape[2],
-                        _image_feats.shape[0],
-                    )
-
-                    # audio_pooled_feats.shape = (bsz, len_of_all_data_pairs, audio_dim)
-                    _audio_pooled_feats = _audio_pooled_feats.permute(0, 2, 1)
-
-                    if self.audio_feat_projection_type == "post":
-                        _audio_pooled_feats = self._audio_pooled_feats(_audio_pooled_feats)
-
-                    _audio_pooled_feats = _audio_pooled_feats / _audio_pooled_feats.norm(
-                        dim=-1, keepdim=True
-                    )
-                
-                    _image_feats = _image_feats / _image_feats.norm(
-                        dim=-1, keepdim=True
-                    )
-
-                    _score = torch.matmul(_audio_pooled_feats, _image_feats.T)
-                    _score = torch.diagonal(_score, offset=0, dim1=1, dim2=2)
-
-                    # _score.shape (bsz, len_of_all_data_pairs // n )
-                    assert _score.shape == (
-                        _audio_pooled_feats.shape[0],
-                        _image_feats.shape[0],
-                    )
-                    scores.append(_score)
-
-                scores = torch.cat( scores, dim=1)
-                scores = scores.cpu()
-                # score.shape (bsz, len_of_all_data_pairs )
-                assert scores.shape == (
+                # audio_pooled_feats.shape = (bsz, audio_dim, #audioSamples)
+                assert _audio_pooled_feats.shape == (
                     audio_feat.shape[0],
-                    all_image_feat.shape[0],
+                    audio_feat.shape[2],
+                    _image_feats.shape[0],
+                ), (
+                    _audio_pooled_feats.shape,
+                    (audio_feat.shape[0], audio_feat.shape[2], _image_feats.shape[0]),
                 )
-                results_scores.append(scores)
+
+                # audio_pooled_feats.shape = (bsz, #audioSamples, audio_dim)
+                _audio_pooled_feats = _audio_pooled_feats.permute(0, 2, 1)
+
+                if self.audio_feat_projection_type == "post":
+                    _audio_pooled_feats = self._audio_pooled_feats(_audio_pooled_feats)
+
+                _audio_pooled_feats = _audio_pooled_feats / _audio_pooled_feats.norm(
+                    dim=-1, keepdim=True
+                )
+
+                _image_feats = _image_feats / _image_feats.norm(dim=-1, keepdim=True)
+
+                _score = torch.matmul(_audio_pooled_feats, _image_feats.T)
+                _score = torch.diagonal(_score, offset=0, dim1=1, dim2=2)
+
+                # _score.shape (bsz, len_of_all_data_pairs // n )
+                assert _score.shape == (
+                    _audio_pooled_feats.shape[0],
+                    _image_feats.shape[0],
+                )
+                scores.append(_score)
+
+            scores = torch.cat(scores, dim=1)
+            scores = scores.cpu()
+
+            # score.shape (bsz, len_of_all_data_pairs )
+            assert scores.shape == (
+                audio_feat.shape[0],
+                all_img_feats.shape[0],
+            )
+            results_scores.append(scores)
 
         results_scores = torch.cat(results_scores, dim=0)
 
-        score_rank = torch.argsort(results_scores, dim=1, descending=True)
-        print(score_rank)
-        print(score_rank.shape)
-        print(torch.arange(
-            results_scores.shape[1], device=results_scores.device, dtype=torch.long
-        ).reshape(-1, 1))
-        # print(score_rank)
-        score_rank = score_rank == torch.arange(
-            results_scores.shape[1], device=results_scores.device, dtype=torch.long
-        ).reshape(-1, 1)
-        print(score_rank)
-        # print(score_rank)
+        assert results_scores.shape == (len(all_audo_feats_id), len(all_img_feats_id))
 
-        recall = []
+        score_per_audio = results_scores
+        score_per_image = score_per_audio.T
+        # AI : Audio -> Image, IA: Image -> Audio
+        AI_answers = all_audo_feats_id
+        IA_answers = all_img_feats_id
 
-        for k in self.recall_at:
-            _v = (
-                torch.sum( score_rank[:, :k].reshape(-1, 1), dim=0 ).item()
-                / all_image_feat.shape[0]
-            )
-            recall.append(_v)
-        
-        self.log( "val_recall", { "val_recall_{}".format(k): recall[i]  for i,k in enumerate(self.recall_at)})
+        recall_results_AI, recall_results_IA = audioImageRetrieval(
+            score_per_audio=score_per_audio,
+            score_per_image=score_per_image,
+            AI_answers=AI_answers,
+            IA_answers=IA_answers,
+            recall_at=self.recall_at,
+        )
+
+        self.log("val_recall_AI", recall_results_AI)
+        self.log("val_recall_IA", recall_results_IA)
 
     def configure_optimizers(self):
         optimizers = []
