@@ -32,3 +32,18 @@ def collate_image_captions(batch: Tuple):
     #     for i, feat in enumerate(_data):
     #         return_batch[i].append(feat)
     # return return_batch
+
+
+def collate_general(batch: Tuple):
+    keysInBatch = list(batch[0].keys())
+    if "wav" in keysInBatch:
+        keysInBatch.append("wav_len")
+    return_dict = {k: [] for k in keysInBatch}
+    for _row in batch:
+        for _key in keysInBatch:
+            if _key == "wav_len":
+                return_dict[_key].append(len(_row["wav"]))
+            else:
+                return_dict[_key].append(_row[_key])
+
+    return return_dict
