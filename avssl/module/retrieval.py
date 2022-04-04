@@ -20,7 +20,7 @@ def audioImageRetrieval(
         recall_at (list): recall at ... ex : [1,5,10]
 
     Return:
-        Tuple( dict, dict) : recall_results_AI, recall_results_IA
+        Tuple( dict, dict) : recall_results_AI, recall_results_IA, recall_results_mean
     """
 
     assert len(score_per_audio.shape) == 2
@@ -64,6 +64,8 @@ def audioImageRetrieval(
 
     recall_results_AI = {}
     recall_results_IA = {}
+    recall_results_mean = {}
+
     # AI (many to one)
     for k in recall_at:
         if k > rank_AI.shape[1]:
@@ -116,4 +118,7 @@ def audioImageRetrieval(
 
     recall_results_IA["recall_random@1"] = 1 - recall_results_IA["recall_random@1"]
 
-    return recall_results_AI, recall_results_IA
+    for _k in ["recall@{}".format(r) for r in recall_at]:
+        recall_results_mean[_k] = (recall_results_IA[_k] + recall_results_AI[_k]) / 2.0
+
+    return recall_results_AI, recall_results_IA, recall_results_mean

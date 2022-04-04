@@ -365,6 +365,100 @@ class AttentativePoolingLayer(nn.Module):
 
         return msk
 
+    def batch_forward(
+        self,
+        input_A: torch.Tensor,
+        input_B: torch.Tensor,
+        intput_msk: torch.Tensor = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward Attentive poolilng with A and B (can be different in batch dimension)
+        Assume modality B has fixed size
+
+        Args:
+            input_A (torch.Tensor): input features for modality A, shape: (bsz_A,dim,seq_len)
+            input_B (torch.Tensor): input features for modality B, shape: (bsz_B,dim,seq_len)
+            intput_msk (torch.Tensor,Optional): input features mask for modality A,B , shape: (bsz_A, seq_lenA, seq_lenB)
+
+            mask: 0 for on and -inf for off
+                if one of the dimension (seq_lenA or seq_lenB) has seq_len of 1, it will be auto broadcast to the input tensor shape
+
+        Returns:
+            Tuple[ torch.Tensor,torch.Tensor ]: (bsz_A,bsz_B,dimA), (bsz_A,bsz_B,dimB)
+        """
+
+        assert len(input_A.shape) == 3, "input_A.shape must be (bsz_A,dim,seq_len)"
+        assert len(input_B.shape) == 3, "input_B.shape must be (bsz_B,dim,seq_len)"
+
+        if intput_msk is not None:
+            assert (
+                input_A.shape[0] == intput_msk.shape[0]
+            ), "input and intput_msk must have same bsz, but got {} and {} instead".format(
+                input_A.shape[0], intput_msk.shape[0]
+            )
+            # repeat mask for modality A
+            if intput_msk.shape[1] == 1:
+                intput_msk = intput_msk.repeat(1, input_A.shape[1], 1)
+
+            # repeat mask for modality B
+            if intput_msk.shape[2] == 1:
+                intput_msk = intput_msk.repeat(1, 1, input_B.shape[2])
+
+        _align = torch.matmul(input_A.permute(0, 2, 1), self.U)
+        _align = torch.einsum("acd,bdf->abcf", [_align, input_B])
+        _align = torch.tanh(_align)
+
+        # _align.shape: bsz_A, bsz_B, seq_len_A, seq_len_B
+
+        # add mask on _align
+        if intput_msk is not None:
+            intput_msk = intput_msk.unsqueeze(1).repeat(1, _align.shape[1], 1, 1)
+            assert _align.shape == intput_msk.shape, "{},{}".format(
+                _align.shape, intput_msk.shape
+            )
+            intput_msk = intput_msk.to(_align.device)
+            intput_msk = intput_msk.type_as(_align)
+
+            _align = _align + intput_msk
+
+        _align = _align.reshape(-1, input_A.shape[2], input_B.shape[2])
+
+        _scoreA, _ = torch.max(_align, dim=2)
+        _scoreB, _ = torch.max(_align, dim=1)
+
+        del _align
+
+        # _scoreA.shape: bsz_A*bsz_B, seq_len_B
+        # _scoreB.shape: bsz_A*bsz_B, seq_len_A
+        assert _scoreA.shape == (input_A.shape[0] * input_B.shape[0], input_A.shape[2])
+        assert _scoreB.shape == (input_A.shape[0] * input_B.shape[0], input_B.shape[2])
+
+        _scoreA = F.softmax(_scoreA, dim=-1)
+        _scoreB = F.softmax(_scoreB, dim=-1)
+
+        _scoreA = _scoreA.reshape(input_A.shape[0], input_B.shape[0], input_A.shape[2])
+        _scoreB = _scoreB.reshape(input_A.shape[0], input_B.shape[0], input_B.shape[2])
+
+        output_A = torch.matmul(
+            input_A.unsqueeze(1).repeat(1, input_B.shape[0], 1, 1),
+            _scoreA.unsqueeze(-1),
+        )
+        output_B = torch.matmul(
+            input_B.unsqueeze(0).repeat(input_A.shape[0], 1, 1, 1),
+            _scoreB.unsqueeze(-1),
+        )
+
+        del _scoreA, _scoreB
+
+        output_A = output_A.reshape(
+            input_A.shape[0], input_B.shape[0], input_A.shape[1]
+        )
+        output_B = output_B.reshape(
+            input_A.shape[0], input_B.shape[0], input_B.shape[1]
+        )
+
+        # (bsz_A,bsz_B,dimA), (bsz_A,bsz_B,dimB)
+        return output_A, output_B
+
     def cal_batch_embedding(
         self,
         input_A: torch.Tensor,
