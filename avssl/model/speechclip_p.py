@@ -1,3 +1,4 @@
+import logging
 import types
 from typing import Tuple, Union
 
@@ -18,6 +19,13 @@ from avssl.module import (
 from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
+
+logging.basicConfig(
+    filename="app-basic.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 class ParallelSpeechClip(BaseLightningModel):
@@ -556,9 +564,11 @@ class ParallelSpeechClip_AttPool(BaseLightningModel):
         return optimizers, schedulers
 
 
-class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
+class ParallelSpeechClip_AttPool_FineGrain_Base(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
+
+        self.pytorch_lightning_logger = logging.getLogger("pytorch_lightning.core")
 
         self.audio_encoder_type = config.audio_encoder.type
         if self.audio_encoder_type == "s3prl":
@@ -576,8 +586,7 @@ class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
         self.audio_feat_projection = nn.Linear(
             self.audio_encoder.out_dim, self.clip.out_dim
         )
-        # print(self.clip.model.visual.transformer.width)
-        # exit(1)
+
         self.image_feat_projection = nn.Linear(
             self.clip.model.visual.transformer.width, self.clip.out_dim
         )
@@ -587,11 +596,6 @@ class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
             self.audio_pooling_degraded = config.audio_encoder.pooling.degraded
         else:
             self.audio_pooling_degraded = False
-
-        # print(self.clip.model.visual)
-        # exit(1)
-        # print(self.clip.out_dim)
-        # exit(1)
 
         if self.audio_pooling_type == "attentative_pooling":
             self.audio_pooling = AttentativePoolingLayer(
@@ -619,9 +623,6 @@ class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
         # evaluate
         self.recall_at = config.retrieval.recall_at
 
-        # to get output before pooling
-        self.insertMiddleLayerViT()
-
     def forward_audio(
         self,
         wav: Union[torch.Tensor, list],
@@ -636,52 +637,6 @@ class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
             return audio_feat, audio_feat_len
         else:
             return self.audio_pooling(audio_feat, audio_feat_len), audio_feat_len
-
-    def insertMiddleLayerViT(self):
-        # class middleLayer(nn.Module):
-        #     def forward(self,x):
-        #         return x[:, 0, :]
-
-        # insert middle layer for hook
-        # self.clip.model.visual.middleLayer = middleLayer()
-
-        def new_forward(self, x):
-            x = self.conv1(x)  # shape = [*, width, grid, grid]
-            x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
-            x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
-            x = torch.cat(
-                [
-                    self.class_embedding.to(x.dtype)
-                    + torch.zeros(
-                        x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
-                    ),
-                    x,
-                ],
-                dim=1,
-            )  # shape = [*, grid ** 2 + 1, width]
-            x = x + self.positional_embedding.to(x.dtype)
-            x = self.ln_pre(x)
-
-            x = x.permute(1, 0, 2)  # NLD -> LND
-            x = self.transformer(x)
-            x = x.permute(1, 0, 2)  # LND -> NLD
-
-            # replace x[:, 0, :]
-
-            # x = self.middleLayer(x)
-
-            # x = self.ln_post(x)
-
-            # if self.proj is not None:
-            #     x = x @ self.proj
-
-            return x
-
-        # replace old forward() with new forward()
-        self.clip.model.visual.old_forward = self.clip.model.visual.forward
-        self.clip.model.visual.forward = types.MethodType(
-            new_forward, self.clip.model.visual
-        )
 
     def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
         if isinstance(images, list):
@@ -999,3 +954,151 @@ class ParallelSpeechClip_AttPool_FineGrain(BaseLightningModel):
             )
 
         return optimizers, schedulers
+
+
+class ParallelSpeechClip_AttPool_FineGrain(ParallelSpeechClip_AttPool_FineGrain_Base):
+    def __init__(self, config: OrderedNamespace):
+        super().__init__(config)
+
+        # to get output before pooling
+        self.alterViT()
+
+    def alterViT(self):
+        # class middleLayer(nn.Module):
+        #     def forward(self,x):
+        #         return x[:, 0, :]
+
+        # insert middle layer for hook
+        # self.clip.model.visual.middleLayer = middleLayer()
+
+        def new_forward(self, x):
+            x = self.conv1(x)  # shape = [*, width, grid, grid]
+            x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
+            x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
+            x = torch.cat(
+                [
+                    self.class_embedding.to(x.dtype)
+                    + torch.zeros(
+                        x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
+                    ),
+                    x,
+                ],
+                dim=1,
+            )  # shape = [*, grid ** 2 + 1, width]
+            x = x + self.positional_embedding.to(x.dtype)
+            x = self.ln_pre(x)
+
+            x = x.permute(1, 0, 2)  # NLD -> LND
+            x = self.transformer(x)
+            x = x.permute(1, 0, 2)  # LND -> NLD
+
+            # replace x[:, 0, :]
+
+            # x = self.middleLayer(x)
+
+            # x = self.ln_post(x)
+
+            # if self.proj is not None:
+            #     x = x @ self.proj
+
+            return x
+
+        # replace old forward() with new forward()
+        self.clip.model.visual.old_forward = self.clip.model.visual.forward
+        self.clip.model.visual.forward = types.MethodType(
+            new_forward, self.clip.model.visual
+        )
+
+    def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
+        if isinstance(images, list):
+            image_tensor = self.clip.prep_image(images).to(self.device)
+        elif isinstance(images, torch.Tensor):
+            if images.dim() != 4 or images.shape[1] != 3:
+                raise ValueError(f"Incorrect image tensor shape {images.shape}")
+            image_tensor = images
+        else:
+            raise TypeError(f"Unknown image type {type(images)}")
+
+        # register hook to layer to get inputs of pooling layer
+        # hook_inps = []
+        # hook_outs = []
+        # def layer_hook(module,inp,out):
+        #     print(inp[0].shape)
+        #     print(out.shape)
+        #     # exit(1)print()
+        #     # print(module)
+        #     exit(1)
+        #     return torch.zeros_like(out)[:,:512]
+        #     hook_inps.append(inp.data.cpu())
+        #     hook_outs.append(out.data.cpu())
+
+        # # hook = self.clip.model.visual.attnpool.register_forward_hook(layer_hook)
+        # # hook = self.clip.model.visual.middleLayer.register_forward_hook(layer_hook)
+        # hook = self.clip.model.visual.transformer.register_forward_hook(layer_hook)
+
+        image_feat = self.clip.encode_image(image_tensor)
+
+        # hook.remove()
+        # print(image_feat)
+        # print("hook_inps",hook_inps)
+        # print("hook_outs",hook_outs)
+
+        # exit(1)
+        return image_feat
+
+
+class ParallelSpeechClip_AttPool_FineGrainHookResBlk(
+    ParallelSpeechClip_AttPool_FineGrain_Base
+):
+    def __init__(self, config: OrderedNamespace):
+        super().__init__(config)
+
+        if not hasattr(config.clip, "hook_resBlk_id"):
+            print(
+                "[warning] config.clip.hook_resBlk_id not specified, using default = -1"
+            )
+            config.clip.hook_resBlk_id = -1
+        else:
+            print("[info] hook to ResBlk(Id={})".format(config.clip.hook_resBlk_id))
+
+    def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
+        if isinstance(images, list):
+            image_tensor = self.clip.prep_image(images).to(self.device)
+        elif isinstance(images, torch.Tensor):
+            if images.dim() != 4 or images.shape[1] != 3:
+                raise ValueError(f"Incorrect image tensor shape {images.shape}")
+            image_tensor = images
+        else:
+            raise TypeError(f"Unknown image type {type(images)}")
+
+        # register hook to layer to get inputs of pooling layer
+        hook_inps = []
+        hook_outs = []
+
+        def layer_hook(module, inp, out):
+            hook_inps.append(inp[0].data.cpu())
+
+        #     # exit(1)print()
+        #     # print(module)
+        # exit(1)
+        #     return torch.zeros_like(out)[:,:512]
+        #     hook_outs.append(out.data.cpu())
+
+        # # hook = self.clip.model.visual.attnpool.register_forward_hook(layer_hook)
+        # # hook = self.clip.model.visual.middleLayer.register_forward_hook(layer_hook)
+
+        # get the input of the last resblock
+        hook = self.clip.model.visual.transformer.resblocks[
+            self.config.clip.hook_resBlk_id
+        ].register_forward_hook(layer_hook)
+
+        self.clip.encode_image(image_tensor)
+        hook.remove()
+        hook_inps = torch.cat(hook_inps, dim=1)
+        # hook_inps (seqlen, bsz, dim)
+        hook_inps = hook_inps.permute(1, 0, 2).to(self.device)
+
+        # get rid of [CLS]
+        hook_inps = hook_inps[:, 1:, :]
+
+        return hook_inps

@@ -17,6 +17,7 @@ from avssl.model import (
     ParallelSpeechClip,
     ParallelSpeechClip_AttPool,
     ParallelSpeechClip_AttPool_FineGrain,
+    ParallelSpeechClip_AttPool_FineGrainHookResBlk,
 )
 
 from .base_task import BaseTask
@@ -522,3 +523,11 @@ class TrainParallelSpeechClip_AttPool_FineGrain(TrainParallelSpeechClipBase):
 
     def run(self):
         super().run(ParallelSpeechClip_AttPool_FineGrain)
+
+
+class TrainParallelSpeechClip_AttPool_FineGrainHookResBlk(TrainParallelSpeechClipBase):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(ParallelSpeechClip_AttPool_FineGrainHookResBlk)
