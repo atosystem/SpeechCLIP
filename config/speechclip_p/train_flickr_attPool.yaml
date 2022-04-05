@@ -3,7 +3,7 @@ data:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
   batch_size: 32
-  val_batch_size: 4
+  dev_batch_size: 4
   split_ratio: 0.9
 
 clip:

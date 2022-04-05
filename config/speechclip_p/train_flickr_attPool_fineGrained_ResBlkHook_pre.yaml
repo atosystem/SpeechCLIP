@@ -1,15 +1,18 @@
+# fine-grained attentive pooling for audio(hubert) and image(ViT-B/32)
+# the features used from ViT are hidden states before layernorm and projection
 data:
   dataset:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
   batch_size: 32
-  dev_batch_size: 4
+  dev_batch_size: 8
   split_ratio: 0.9
 
 clip:
   name: ViT-B/32
   image_encoder_trainable: false
   text_encoder_trainable: false
+  hook_resBlk_id : -1
 
 cl_loss:
   temperature: 1
@@ -29,7 +32,7 @@ audio_encoder:
   max_audio_len: 138581
   pooling:
     type: attentative_pooling
-    degraded: true
+    degraded: false
     audio_projection_type: pre
   optim:
     name: Adam
@@ -49,17 +52,23 @@ trainer:
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  default_root_dir: ./exp/sc_p_attPool_degraded
+  default_root_dir: ./exp/sc_p_attPool_finegrained_pre
   log_every_n_steps: 2
   num_sanity_val_steps: 0
   # limit_train_batches: 2
-  # limit_val_batches: 4
+  # limit_val_batches: 16
 
 
-# learnable U
 #   | Name                  | Type                    | Params
+# ------------------------------------------------------------------
 # 0 | audio_encoder         | S3prlSpeechEncoder      | 94.7 M
-# 1 | clip                  | ClipModel               | 151 M 
-# 2 | audio_feat_projection | Linear                  | 393 K 
-# 3 | audio_pooling         | AttentativePoolingLayer | 262 K 
-# 4 | criterion             | SupConLoss              | 0    
+# 1 | clip                  | ClipModel               | 151 M
+# 2 | audio_feat_projection | Linear                  | 393 K
+# 3 | image_feat_projection | Linear                  | 393 K
+# 4 | audio_pooling         | AttentativePoolingLayer | 262 K
+# 5 | criterion             | SupConLoss              | 0
+# ------------------------------------------------------------------
+# 247 M     Trainable params
+# 0         Non-trainable params
+# 247 M     Total params
+# 494.049   Total estimated model params size (MB)
