@@ -47,7 +47,5 @@ trainer:
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  default_root_dir: exp/sc_p_meanpool
-  num_sanity_val_steps: 0
-  # limit_train_batches: 2
-  # limit_val_batches: 8
+  default_root_dir: exp/sc_p_tmp
+  track_grad_norm: 2
