@@ -24,3 +24,4 @@ class BaseLightningModel(pl.LightningModule):
     @abc.abstractmethod
     def configure_optimizers(self):
         raise NotImplementedError
+

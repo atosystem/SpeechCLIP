@@ -1,0 +1,53 @@
+data:
+  dataset:
+    name: flickr
+    dataset_root: /work/vjsalt22/dataset/flickr/
+  batch_size: 3
+  split_ratio: 0.9
+
+clip:
+  name: ViT-B/32
+  device: cuda:0
+  image_encoder_trainable: false
+  text_encoder_trainable: false
+
+audio_encoder:
+  type: s3prl
+  name: hubert
+  pretrained: true
+  trainable: true
+  feat_select_idx: last_hidden_state
+  layer_drop: 0.05
+  max_audio_len: 240000
+  optim:
+    name: Adam
+    args:
+      lr: 1.e-4
+      weight_decay: 1.e-6
+  scheduler:
+    name: linear_warmup_decay
+    warmup: 500
+    max_step: 5000
+    final_lr: 1.e-8
+
+vq:
+  activation: relu # relu or gelu
+  type: gumbel # which type of quantizer to use
+  vars: 49408 # project to this many vector quantized variables per group
+  groups: 1 # number of groups of latent variables
+  dim: 0 # uses this dimensionality for quantized vectors. 0 to use model dim // groups
+  depth: 1 # number of layers for vq weight projection
+  combine_groups: false # bool, if set, variables are shared among groups
+  temp: [2.0, 0.5, 0.999995] # temperature for latent variable sampling with gumbel softmax. should be a tuple of 3 values (start, end, decay)
+  gamma: 0.25 # gamma parameter for kmeans style vector quantization
+
+trainer:
+  max_steps: 5000
+  gradient_clip_val: 0.5
+  accumulate_grad_batches: 8
+  check_val_every_n_epoch: 1
+  precision: 32
+  logger: true
+  log_every_n_steps: 1
+  default_root_dir: exp/sc_c_tmp
+  track_grad_norm: 2

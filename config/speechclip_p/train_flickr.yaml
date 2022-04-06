@@ -39,3 +39,4 @@ trainer:
   precision: 16
   logger: true
   default_root_dir: exp/sc_p_tmp
+  track_grad_norm: 2

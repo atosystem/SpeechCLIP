@@ -37,12 +37,16 @@ class ClipModel(nn.Module):
 
         self.name = name
         self.device = device
+
         self.model, self.image_preprocess = clip.load(name, device)
+
+        self.model = self.model.float()
 
         self.image_encoder_trainable = image_encoder_trainable
         self.text_encoder_trainable = text_encoder_trainable
 
         self.out_dim = self.model.transformer.width
+        self.text_embd = self.model.token_embedding
 
     def prep_image(self, paths: list) -> torch.Tensor:
         """Prepare image tensor
@@ -85,7 +89,28 @@ class ClipModel(nn.Module):
             with torch.no_grad():
                 return self.model.encode_image(image)
 
-    def encode_text(self, text: torch.Tensor) -> torch.Tensor:
+    def encode_subword_prob(self, result: dict) -> torch.Tensor:
+        # start token embd = 49406, end token embd = 49407
+        # self.model.to(self.device)
+        # prob, self.text_embd = prob.to(self.device), self.text_embd.half()
+        prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
+        bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
+        paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
+        weighted_embd = prob @ self.text_embd.weight
+        x = torch.cat( (weighted_embd, self.text_embd(paddings)), dim=1 ) # [batch_size, n_ctx, d_model]
+
+        x = x + self.model.positional_embedding
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.model.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.model.ln_final(x)
+
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection 
+        return x
+
+    def encode_text(self, prob: torch.Tensor) -> torch.Tensor:
         """Encode a batch of sentences.
 
         Args:
@@ -95,10 +120,12 @@ class ClipModel(nn.Module):
             torch.Tensor: Text features. (B, D)
         """
         if self.text_encoder_trainable:
-            return self.model.encode_text(text)
+            # return self.model.encode_text(text)
+            return self.encode_subword_prob(prob)
         else:
             with torch.no_grad():
-                return self.model.encode_text(text)
+                # return self.model.encode_text(text)
+                return self.encode_subword_prob(prob)
 
     def get_scores(self, image: torch.Tensor, text: torch.Tensor) -> tuple:
         """Get logit scores between the images and text sentences.

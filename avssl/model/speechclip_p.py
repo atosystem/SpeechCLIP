@@ -106,6 +106,10 @@ class ParallelSpeechClip(BaseLightningModel):
 
         return audio_feat, image_feat
 
+    def log_grad_norm(self, grad_norm_dict):
+
+        self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
     def training_step(self, batch, batch_idx):
         loss, audio_feat, image_feat = self.forward(batch, cal_loss=True)
         return {"loss": loss}
