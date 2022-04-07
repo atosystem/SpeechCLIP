@@ -1,6 +1,7 @@
 import imp
 from re import sub
 from typing import Tuple, Union
+from unittest import result
 
 import numpy as np
 import torch
@@ -27,14 +28,21 @@ class CascadedSpeechClip(BaseLightningModel):
                 f"Unknown audio encoder type {self.audio_encoder_type}"
             )
 
-        self.clip = ClipModel(**config.clip)
+        self.clip = ClipModel(codebook_size=config.vq.num_vars, 
+                              precision=config.trainer.precision, 
+                              **config.clip)
+        self.text_embd = self.clip.text_embd
+        self.text_embd_dim = self.text_embd.weight.size(-1)
+
         self.downsampling = nn.Sequential(
                         nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
                         nn.AvgPool1d(2, 2, 0),
-                        nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1)
+                        nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1)
                     )
 
         self.vector_quantizer = None
+        self.vq_type = config.vq.type
+
         if config.vq.activation == "relu":
             activation = nn.ReLU()
         elif config.vq.activation == "gelu":
@@ -42,29 +50,29 @@ class CascadedSpeechClip(BaseLightningModel):
         else:
             raise Exception("unknown activation " + config.activation)
 
-        if config.vq.type == "gumbel":
-            assert (len(config.vq.temp) == 3), f"Your temp tuple size is {len(config.vq.temp)}, should be 3."
+        if self.vq_type == "gumbel":
             self.vector_quantizer = GumbelVectorQuantizer(
-                dim=self.embd_dim,
-                num_vars=config.vq.vars,
+                dim=self.text_embd_dim,
+                num_vars=config.vq.num_vars,
                 temp=config.vq.temp,
                 groups=config.vq.groups,
                 combine_groups=config.vq.combine_groups,
-                vq_dim=config.vq.dim if config.vq.dim > 0 else self.embd_dim,
+                vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 activation=activation,
-                weight_proj_depth=config.vq.depth,
                 weight_proj_factor=2,
+                init_codebook=self.text_embd.weight
             )
-        elif config.vq_type == "kmeans":
+        elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
-                dim=self.embd_dim,
-                num_vars=config.vq.vars,
+                dim=self.text_embd_dim,
+                num_vars=config.vq.num_vars,
                 groups=config.vq.groups,
                 combine_groups=config.vq.combine_groups,
-                vq_dim=config.vq.dim if config.vq.dim > 0 else self.embd_dim,
+                vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 gamma=config.vq.gamma,
+                init_codebook=self.text_embd.weight
             )
         else:
             assert (
@@ -113,7 +121,7 @@ class CascadedSpeechClip(BaseLightningModel):
         self,
         batch,
         cal_loss: bool = False,) -> dict:
-        wav, wav_len, images = batch
+        wav, wav_len, images, id = batch
         audio_feat, audio_feat_len = self.forward_audio(wav, wav_len)
         image_feat = self.forward_image(images)
 
@@ -127,14 +135,6 @@ class CascadedSpeechClip(BaseLightningModel):
         if result["subword_prob"].size(1) > 77:
             result["subword_prob"] = result["subword_prob"][:, :77, :]
 
-        # subword_idx = torch.zeros(bsz, max_len)
-        # for i in range(bsz):
-        #     idx = torch.argmax(subword_prob[i], -1)
-        #     if len(idx) > max_len:
-        #         idx = idx[:max_len]
-        #     subword_idx[i, :len(idx)] = idx
-        
-        # subword_idx = subword_idx.int().to(self.device)
         text_feat = self.clip.encode_text(result)
 
         if cal_loss:
@@ -150,18 +150,26 @@ class CascadedSpeechClip(BaseLightningModel):
             )
             loss_text = self.criterion(logits_per_text, labels)
             loss_image = self.criterion(logits_per_image, labels)
-            loss = (loss_text + loss_image) / 2
-            return loss, text_feat, image_feat
 
-        return text_feat, image_feat
+            loss = (result["loss"] + loss_text + loss_image) / 3
+                
+            return loss, text_feat, image_feat, result
+
+        return text_feat, image_feat, result
 
     def validation_step(self, batch, batch_idx):
-        loss, _, _ = self.forward(batch, cal_loss=True)
-        self.log("val_loss", loss)
+        loss, _, _, res = self.forward(batch, cal_loss=True)
 
-    def log_grad_norm(self, grad_norm_dict):
-        print(grad_norm_dict)
-        self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        result = {"val_loss": loss}
+        for key in res.keys():
+            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
+                result[key] = res[key] 
+
+        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
+    # def log_grad_norm(self, grad_norm_dict):
+    #     print(grad_norm_dict)
+    #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
     def configure_optimizers(self):
         optimizers = []
@@ -209,8 +217,16 @@ class CascadedSpeechClip(BaseLightningModel):
         return optimizers, schedulers
 
     def training_step(self, batch, batch_idx):
+        loss, text_feat, image_feat, res = self.forward(batch, cal_loss=True)
+
+        result = {}
+        for key in res.keys():
+            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
+                result[key] = res[key] 
+
+        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
         # opts, _ = self.configure_optimizers()
-        loss, text_feat, image_feat = self.forward(batch, cal_loss=True)
         # for opt in opts:
         #     opt.zero_grad()
         #     # automatically applies scaling, etc...

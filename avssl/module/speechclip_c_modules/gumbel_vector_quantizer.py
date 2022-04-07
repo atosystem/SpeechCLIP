@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from numpy import var
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,6 +22,7 @@ class GumbelVectorQuantizer(nn.Module):
         activation=nn.GELU(),
         weight_proj_depth=1,
         weight_proj_factor=1,
+        init_codebook=None
     ):
         """Vector quantization using gumbel softmax
 
@@ -38,22 +40,29 @@ class GumbelVectorQuantizer(nn.Module):
                                 projections by this factor
         """
         super().__init__()
+        if init_codebook is not None:
+            vq_dim = init_codebook.size(-1)
+            num_vars = init_codebook.size(0)
 
         self.groups = groups
         self.combine_groups = combine_groups
         self.input_dim = dim
-        self.num_vars = num_vars
         self.time_first = time_first
+        self.num_vars = num_vars
 
         assert (
             vq_dim % groups == 0
-        ), f"dim {vq_dim} must be divisible by groups {groups} for concatenation"
+        ), f"dim {vq_dim} must be divisible by groups {groups} for concatenation" 
 
         var_dim = vq_dim // groups
         num_groups = groups if not combine_groups else 1
 
-        self.vars = nn.Parameter(torch.FloatTensor(1, num_groups * num_vars, var_dim))
-        nn.init.uniform_(self.vars)
+        if init_codebook is not None: 
+            init_codebook = init_codebook.view(1, num_groups * num_vars, var_dim).detach()
+            self.vars = init_codebook
+        else:
+            self.vars = nn.Parameter(torch.FloatTensor(1, num_groups * num_vars, var_dim))
+            nn.init.uniform_(self.vars)
 
         if weight_proj_depth > 1:
 
@@ -158,14 +167,14 @@ class GumbelVectorQuantizer(nn.Module):
             .view(bsz * tsz, self.groups, -1)
         )
         hard_probs = torch.mean(hard_x.float(), dim=0)
-        result["code_perplexity"] = torch.exp(
+        result["code_cpx"] = torch.exp(
             -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
         ).sum()
 
         avg_probs = torch.softmax(
             x.view(bsz * tsz, self.groups, -1).float(), dim=-1
         ).mean(dim=0)
-        result["prob_perplexity"] = torch.exp(
+        result["prob_cpx"] = torch.exp(
             -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)
         ).sum()
 
@@ -194,13 +203,15 @@ class GumbelVectorQuantizer(nn.Module):
             )
 
         x = x.unsqueeze(-1) * vars
+        #print(x.dtype)
         x = x.view(bsz * tsz, self.groups, self.num_vars, -1)
-        x = x.sum(-2)
+        x = x.sum(-2).type_as(x)
         x = x.view(bsz, tsz, -1)
 
         if not self.time_first:
             x = x.transpose(1, 2)  # BTC -> BCT
 
         result["x"] = x
+        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"] 
 
         return result

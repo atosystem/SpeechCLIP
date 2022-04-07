@@ -19,9 +19,11 @@ class ClipModel(nn.Module):
     def __init__(
         self,
         name: str,
+        codebook_size: int = 0,
         device: str = "cpu",
         image_encoder_trainable: bool = False,
         text_encoder_trainable: bool = False,
+        precision: int = 16,
         **kwargs,
     ):
         """Official CLIP model.
@@ -40,13 +42,20 @@ class ClipModel(nn.Module):
 
         self.model, self.image_preprocess = clip.load(name, device)
 
-        self.model = self.model.float()
+        if precision == 16:
+            self.model.half()
+        elif precision == 32:
+            self.model.float()
+
 
         self.image_encoder_trainable = image_encoder_trainable
         self.text_encoder_trainable = text_encoder_trainable
 
         self.out_dim = self.model.transformer.width
         self.text_embd = self.model.token_embedding
+
+        assert codebook_size > 0, f"wrong code book size"
+        self.linear_proj = nn.Linear(codebook_size, 49408)
 
     def prep_image(self, paths: list) -> torch.Tensor:
         """Prepare image tensor
@@ -91,9 +100,10 @@ class ClipModel(nn.Module):
 
     def encode_subword_prob(self, result: dict) -> torch.Tensor:
         # start token embd = 49406, end token embd = 49407
-        # self.model.to(self.device)
-        # prob, self.text_embd = prob.to(self.device), self.text_embd.half()
         prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
+        #######
+        # prob = self.linear_proj(prob)
+        #######
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
         paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
         weighted_embd = prob @ self.text_embd.weight

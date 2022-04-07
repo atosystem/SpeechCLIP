@@ -1,6 +1,8 @@
 # Other
 .DS_Store
 exp/
+.tmp_tools/
+.conda_config/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

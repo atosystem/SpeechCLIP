@@ -2,8 +2,8 @@ data:
   dataset:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
-  batch_size: 16
-  dev_batch_size: 8
+  batch_size: 32
+  dev_batch_size: 4
   split_ratio: 0.9
 
 clip:
@@ -26,9 +26,11 @@ audio_encoder:
   trainable: true
   feat_select_idx: last_hidden_state
   layer_drop: 0.05
-  max_audio_len: 240000
+  max_audio_len: 138581
   pooling:
-    type: mean
+    type: attentative_pooling
+    degraded: true
+    audio_projection_type: pre
   optim:
     name: Adam
     args:
@@ -43,16 +45,21 @@ audio_encoder:
 trainer:
   max_steps: 70000
   gradient_clip_val: 10
-  accumulate_grad_batches: 16
+  accumulate_grad_batches: 8
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-<<<<<<< HEAD
-  default_root_dir: exp/sc_p_tmp
-  track_grad_norm: 2
-=======
-  default_root_dir: exp/sc_p
+  default_root_dir: ./exp/sc_p_attPool_degraded
+  log_every_n_steps: 2
   num_sanity_val_steps: 0
   # limit_train_batches: 2
   # limit_val_batches: 4
->>>>>>> fb2593d8d49e1d8e6fe2a442a7667888cc36db9e
+
+
+# learnable U
+#   | Name                  | Type                    | Params
+# 0 | audio_encoder         | S3prlSpeechEncoder      | 94.7 M
+# 1 | clip                  | ClipModel               | 151 M 
+# 2 | audio_feat_projection | Linear                  | 393 K 
+# 3 | audio_pooling         | AttentativePoolingLayer | 262 K 
+# 4 | criterion             | SupConLoss              | 0    
