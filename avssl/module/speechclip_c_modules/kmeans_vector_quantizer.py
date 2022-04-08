@@ -10,8 +10,15 @@ from fairseq.modules import Fp32GroupNorm
 
 class KmeansVectorQuantizer(nn.Module):
     def __init__(
-        self, dim, num_vars, groups, combine_groups, vq_dim, time_first, gamma=0.25,
-        init_codebook=None
+        self,
+        dim,
+        num_vars,
+        groups,
+        combine_groups,
+        vq_dim,
+        time_first,
+        gamma=0.25,
+        init_codebook=None,
     ):
         """Vector quantization using straight pass-through estimator (i.e. kmeans)
 
@@ -44,9 +51,11 @@ class KmeansVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            init_codebook = init_codebook.view(num_vars, num_groups, self.var_dim).detach()
+            init_codebook = init_codebook.view(
+                num_vars, num_groups, self.var_dim
+            ).detach()
             self.embedding = init_codebook
-        else: 
+        else:
             self.embedding = nn.Parameter(
                 0.01 * torch.randn(num_vars, num_groups, self.var_dim)
             )
@@ -95,7 +104,7 @@ class KmeansVectorQuantizer(nn.Module):
         )
 
         prob_proj = nn.Softmax(dim=-1)
-        result["subword_prob"] = prob_proj( -1 * d.squeeze(-1).permute(1, 2, 0) )
+        result["subword_prob"] = prob_proj(-1 * d.squeeze(-1).permute(1, 2, 0))
 
         idx = d.argmin(dim=0)
         zq = (

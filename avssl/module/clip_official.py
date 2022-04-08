@@ -47,7 +47,6 @@ class ClipModel(nn.Module):
         elif precision == 32:
             self.model.float()
 
-
         self.image_encoder_trainable = image_encoder_trainable
         self.text_encoder_trainable = text_encoder_trainable
 
@@ -107,7 +106,9 @@ class ClipModel(nn.Module):
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
         paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
         weighted_embd = prob @ self.text_embd.weight
-        x = torch.cat( (weighted_embd, self.text_embd(paddings)), dim=1 ) # [batch_size, n_ctx, d_model]
+        x = torch.cat(
+            (weighted_embd, self.text_embd(paddings)), dim=1
+        )  # [batch_size, n_ctx, d_model]
 
         x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -117,7 +118,7 @@ class ClipModel(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection 
+        x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
         return x
 
     def encode_text(self, prob: torch.Tensor) -> torch.Tensor:

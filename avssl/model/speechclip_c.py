@@ -9,7 +9,10 @@ from torch import nn
 
 from avssl.base import OrderedNamespace
 from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder
-from avssl.module.speechclip_c_modules import GumbelVectorQuantizer, KmeansVectorQuantizer
+from avssl.module.speechclip_c_modules import (
+    GumbelVectorQuantizer,
+    KmeansVectorQuantizer,
+)
 from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
@@ -28,17 +31,19 @@ class CascadedSpeechClip(BaseLightningModel):
                 f"Unknown audio encoder type {self.audio_encoder_type}"
             )
 
-        self.clip = ClipModel(codebook_size=config.vq.num_vars, 
-                              precision=config.trainer.precision, 
-                              **config.clip)
+        self.clip = ClipModel(
+            codebook_size=config.vq.num_vars,
+            precision=config.trainer.precision,
+            **config.clip,
+        )
         self.text_embd = self.clip.text_embd
         self.text_embd_dim = self.text_embd.weight.size(-1)
 
         self.downsampling = nn.Sequential(
-                        nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
-                        nn.AvgPool1d(2, 2, 0),
-                        nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1)
-                    )
+            nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
+            nn.AvgPool1d(2, 2, 0),
+            nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
+        )
 
         self.vector_quantizer = None
         self.vq_type = config.vq.type
@@ -61,7 +66,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 time_first=False,
                 activation=activation,
                 weight_proj_factor=2,
-                init_codebook=self.text_embd.weight
+                init_codebook=self.text_embd.weight,
             )
         elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -72,7 +77,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 gamma=config.vq.gamma,
-                init_codebook=self.text_embd.weight
+                init_codebook=self.text_embd.weight,
             )
         else:
             assert (
@@ -120,13 +125,14 @@ class CascadedSpeechClip(BaseLightningModel):
     def forward(
         self,
         batch,
-        cal_loss: bool = False,) -> dict:
+        cal_loss: bool = False,
+    ) -> dict:
         wav, wav_len, images, id = batch
         audio_feat, audio_feat_len = self.forward_audio(wav, wav_len)
         image_feat = self.forward_image(images)
 
         #  down sampling
-        audio_feat = audio_feat.permute(0, 2, 1) # (B, T, F) -> (B, F, T)
+        audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
         audio_feat = self.downsampling(audio_feat)
 
         # vector quantization
@@ -152,7 +158,7 @@ class CascadedSpeechClip(BaseLightningModel):
             loss_image = self.criterion(logits_per_image, labels)
 
             loss = (result["loss"] + loss_text + loss_image) / 3
-                
+
             return loss, text_feat, image_feat, result
 
         return text_feat, image_feat, result
@@ -163,7 +169,7 @@ class CascadedSpeechClip(BaseLightningModel):
         result = {"val_loss": loss}
         for key in res.keys():
             if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
-                result[key] = res[key] 
+                result[key] = res[key]
 
         self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
@@ -177,10 +183,10 @@ class CascadedSpeechClip(BaseLightningModel):
 
         if self.config.audio_encoder.trainable:
             audio_params = list(self.audio_encoder.parameters())
-        
+
         audio_params = audio_params + list(self.downsampling.parameters())
         audio_params = audio_params + list(self.vector_quantizer.parameters())
-        
+
         audio_optimizer = getattr(torch.optim, self.config.audio_encoder.optim.name)(
             audio_params,
             **self.config.audio_encoder.optim.args,
@@ -222,7 +228,7 @@ class CascadedSpeechClip(BaseLightningModel):
         result = {}
         for key in res.keys():
             if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
-                result[key] = res[key] 
+                result[key] = res[key]
 
         self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
@@ -232,5 +238,5 @@ class CascadedSpeechClip(BaseLightningModel):
         #     # automatically applies scaling, etc...
         #     self.manual_backward(loss)
         #     opt.step()
-        
+
         return {"loss": loss}

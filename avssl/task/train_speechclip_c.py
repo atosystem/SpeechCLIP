@@ -4,8 +4,8 @@ import logging
 import torch
 import yaml
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.loggers import CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader, random_split
 
 from avssl.base import OrderedNamespace
@@ -134,5 +134,5 @@ class TrainCascadedSpeechClip(BaseTask):
             gpus=config.gpus,
             **config.trainer,
         )
-        
+
         trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
