@@ -10,7 +10,15 @@ from fairseq.modules import Fp32GroupNorm
 
 class KmeansVectorQuantizer(nn.Module):
     def __init__(
-        self, dim, num_vars, groups, combine_groups, vq_dim, time_first, gamma=0.25
+        self,
+        dim,
+        num_vars,
+        groups,
+        combine_groups,
+        vq_dim,
+        time_first,
+        gamma=0.25,
+        init_codebook=None,
     ):
         """Vector quantization using straight pass-through estimator (i.e. kmeans)
 
@@ -39,9 +47,15 @@ class KmeansVectorQuantizer(nn.Module):
         self.var_dim = vq_dim // groups
         num_groups = groups if not combine_groups else 1
 
-        self.embedding = nn.Parameter(
-            0.01 * torch.randn(num_vars, num_groups, self.var_dim)
-        )
+        if init_codebook is not None:
+            init_codebook = init_codebook.view(
+                num_vars, num_groups, self.var_dim
+            ).detach()
+            self.embedding = init_codebook
+        else:
+            self.embedding = nn.Parameter(
+                0.01 * torch.randn(num_vars, num_groups, self.var_dim)
+            )
         self.projection = nn.Sequential(
             nn.Conv1d(dim, dim, kernel_size=1, groups=groups, bias=False),
             Fp32GroupNorm(groups, dim),
@@ -85,6 +99,10 @@ class KmeansVectorQuantizer(nn.Module):
             .view(self.num_vars, bsz, tsz, self.groups, -1)
             .norm(dim=-1, p=2)
         )
+
+        prob_proj = nn.Softmax(dim=-1)
+        result["subword_prob"] = prob_proj(-1 * d.squeeze(-1).permute(1, 2, 0))
+
         idx = d.argmin(dim=0)
         zq = (
             torch.stack(
@@ -122,6 +140,5 @@ class KmeansVectorQuantizer(nn.Module):
         latent_loss = self.mse_mean(zq, ze.detach())
         commitment_loss = self.mse_mean(ze, zq.detach())
 
-        result["kmeans_loss"] = latent_loss + self.gamma * commitment_loss
-
+        result["loss"] = latent_loss + self.gamma * commitment_loss
         return result

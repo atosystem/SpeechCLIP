@@ -6,6 +6,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from numpy import var
 
 
 class GumbelVectorQuantizer(nn.Module):
@@ -21,6 +22,7 @@ class GumbelVectorQuantizer(nn.Module):
         activation=nn.GELU(),
         weight_proj_depth=1,
         weight_proj_factor=1,
+        init_codebook=None,
     ):
         """Vector quantization using gumbel softmax
 
@@ -52,8 +54,16 @@ class GumbelVectorQuantizer(nn.Module):
         var_dim = vq_dim // groups
         num_groups = groups if not combine_groups else 1
 
-        self.vars = nn.Parameter(torch.FloatTensor(1, num_groups * num_vars, var_dim))
-        nn.init.uniform_(self.vars)
+        if init_codebook is not None:
+            init_codebook = init_codebook.view(
+                1, num_groups * num_vars, var_dim
+            ).detach()
+            self.vars = init_codebook
+        else:
+            self.vars = nn.Parameter(
+                torch.FloatTensor(1, num_groups * num_vars, var_dim)
+            )
+            nn.init.uniform_(self.vars)
 
         if weight_proj_depth > 1:
 
@@ -85,7 +95,7 @@ class GumbelVectorQuantizer(nn.Module):
 
     def set_num_updates(self, num_updates):
         self.curr_temp = max(
-            self.max_temp * self.temp_decay**num_updates, self.min_temp
+            self.max_temp * self.temp_decay ** num_updates, self.min_temp
         )
 
     def get_codebook_indices(self):
@@ -100,7 +110,7 @@ class GumbelVectorQuantizer(nn.Module):
 
             if not self.combine_groups:
                 self.codebook_indices = self.codebook_indices.view(
-                    self.num_vars**self.groups, -1
+                    self.num_vars ** self.groups, -1
                 )
                 for b in range(1, self.groups):
                     self.codebook_indices[:, b] += self.num_vars * b
@@ -112,7 +122,7 @@ class GumbelVectorQuantizer(nn.Module):
         return (
             self.vars.squeeze(0)
             .index_select(0, indices)
-            .view(self.num_vars**self.groups, -1)
+            .view(self.num_vars ** self.groups, -1)
         )
 
     def sample_from_codebook(self, b, n):
@@ -132,7 +142,7 @@ class GumbelVectorQuantizer(nn.Module):
         res = indices.new_full(indices.shape[:-1], 0)
         for i in range(self.groups):
             exponent = self.groups - i - 1
-            res += indices[..., i] * (self.num_vars**exponent)
+            res += indices[..., i] * (self.num_vars ** exponent)
         return res
 
     def forward_idx(self, x):
@@ -194,6 +204,7 @@ class GumbelVectorQuantizer(nn.Module):
             )
 
         x = x.unsqueeze(-1) * vars
+        # print(x.dtype)
         x = x.view(bsz * tsz, self.groups, self.num_vars, -1)
         x = x.sum(-2)
         x = x.view(bsz, tsz, -1)
@@ -202,5 +213,6 @@ class GumbelVectorQuantizer(nn.Module):
             x = x.transpose(1, 2)  # BTC -> BCT
 
         result["x"] = x
+        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
 
         return result

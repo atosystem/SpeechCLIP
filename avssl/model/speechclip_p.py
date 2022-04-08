@@ -745,6 +745,12 @@ class ParallelSpeechClip_AttPool_FineGrain_Base(BaseLightningModel):
 
         return audio_feat, image_feat
 
+    def log_grad_norm(self, grad_norm_dict):
+
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
+
     def training_step(self, batch, batch_idx):
         loss, _, _, _ = self.forward(batch, cal_loss=True)
         self.log("train_loss", loss)
