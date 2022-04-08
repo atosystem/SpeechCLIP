@@ -1,7 +1,7 @@
 # Other
 .DS_Store
 exp/
-.tmp_tools/
+tmp_tools/
 .conda_config/
 
 # stat for experiments
