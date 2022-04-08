@@ -47,12 +47,7 @@ trainer:
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-<<<<<<< HEAD
-  default_root_dir: exp/sc_p_tmp
-  track_grad_norm: 2
-=======
   default_root_dir: exp/sc_p
   num_sanity_val_steps: 0
   # limit_train_batches: 2
   # limit_val_batches: 4
->>>>>>> fb2593d8d49e1d8e6fe2a442a7667888cc36db9e

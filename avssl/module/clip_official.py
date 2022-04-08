@@ -53,8 +53,8 @@ class ClipModel(nn.Module):
         self.out_dim = self.model.transformer.width
         self.text_embd = self.model.token_embedding
 
-        assert codebook_size > 0, f"wrong code book size"
-        self.linear_proj = nn.Linear(codebook_size, 49408)
+        # assert codebook_size > 0, f"wrong code book size"
+        # self.linear_proj = nn.Linear(codebook_size, 49408)
 
     def prep_image(self, paths: list) -> torch.Tensor:
         """Prepare image tensor
@@ -121,22 +121,35 @@ class ClipModel(nn.Module):
         x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
         return x
 
-    def encode_text(self, prob: torch.Tensor) -> torch.Tensor:
+    def encode_text(self, text: torch.Tensor) -> torch.Tensor:
         """Encode a batch of sentences.
-
         Args:
             text (torch.Tensor): Sentences. (B, L)
-
         Returns:
             torch.Tensor: Text features. (B, D)
         """
         if self.text_encoder_trainable:
-            # return self.model.encode_text(text)
-            return self.encode_subword_prob(prob)
+            return self.model.encode_text(text)
         else:
             with torch.no_grad():
-                # return self.model.encode_text(text)
-                return self.encode_subword_prob(prob)
+                return self.model.encode_text(text)
+
+    # def encode_text(self, prob: torch.Tensor) -> torch.Tensor:
+    #     """Encode a batch of sentences.
+
+    #     Args:
+    #         text (torch.Tensor): Sentences. (B, L)
+
+    #     Returns:
+    #         torch.Tensor: Text features. (B, D)
+    #     """
+    #     if self.text_encoder_trainable:
+    #         # return self.model.encode_text(text)
+    #         return self.encode_subword_prob(prob)
+    #     else:
+    #         with torch.no_grad():
+    #             # return self.model.encode_text(text)
+    #             return self.encode_subword_prob(prob)
 
     def get_scores(self, image: torch.Tensor, text: torch.Tensor) -> tuple:
         """Get logit scores between the images and text sentences.

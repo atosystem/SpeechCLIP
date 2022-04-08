@@ -162,22 +162,35 @@ class GumbelVectorQuantizer(nn.Module):
         bsz, tsz, fsz = x.shape
         x = x.reshape(-1, fsz)
         x = self.weight_proj(x)
-        x = x.view(bsz * tsz * self.groups, -1)
+        # x.shape = (bsz, tsz, grps * num_vars)
 
+        x = x.view(bsz * tsz * self.groups, -1)
+        # x.shape = (bsz * tsz * grps, num_vars)
+
+        # k is the indices of the largest logits among num_vars
         _, k = x.max(-1)
+        
+        # hard_x: one hot for the choosen codewords ( bsz * tsz, self.groups, num_vars )
         hard_x = (
             x.new_zeros(*x.shape)
             .scatter_(-1, k.view(-1, 1), 1.0)
             .view(bsz * tsz, self.groups, -1)
         )
+
+        # hard_probs: probs for all codewords in each codebook group : (grp, num_vars) (use one-hot as prob)
         hard_probs = torch.mean(hard_x.float(), dim=0)
+
+        # codebook complexity sigma {e^(entropy for codebook group)} for all codebook groups
         result["code_cpx"] = torch.exp(
             -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
         ).sum()
 
+        # average over minibatch and all timesteps of the codewords chosen prob. (grp, num_vars)
         avg_probs = torch.softmax(
             x.view(bsz * tsz, self.groups, -1).float(), dim=-1
         ).mean(dim=0)
+
+        # prob_cpx : probs for all codewords in each codebook group : (grp, num_vars) (use softmax as prob)
         result["prob_cpx"] = torch.exp(
             -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)
         ).sum()
@@ -190,12 +203,14 @@ class GumbelVectorQuantizer(nn.Module):
             x = hard_x
 
         x = x.view(bsz * tsz, -1)
+        # x (bsz * tsz, group * num_vars)
 
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
         vars = self.vars
         if self.combine_groups:
+            # codebook groups shared same set of parameters
             vars = vars.repeat(1, self.groups, 1)
 
         if produce_targets:
@@ -217,5 +232,8 @@ class GumbelVectorQuantizer(nn.Module):
 
         result["x"] = x
         result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
+
+        print("result",result)
+        exit(1)
 
         return result
