@@ -30,7 +30,7 @@ audio_encoder:
   layer_drop: 0.05
   max_audio_len: 138581
   pooling:
-    type: attentative_pooling
+    type: attentive_pooling
     degraded: false
     audio_projection_type: pre
   optim:
@@ -55,7 +55,7 @@ trainer:
   log_every_n_steps: 2
   num_sanity_val_steps: 0
   # limit_train_batches: 2
-  # limit_val_batches: 16
+  limit_val_batches: 8
 
 
 #   | Name                  | Type                    | Params
@@ -64,6 +64,6 @@ trainer:
 # 1 | clip                  | ClipModel               | 151 M
 # 2 | audio_feat_projection | Linear                  | 393 K
 # 3 | image_feat_projection | Linear                  | 393 K
-# 4 | audio_pooling         | AttentativePoolingLayer | 262 K
+# 4 | audio_pooling         | AttentivePoolingLayer   | 262 K
 # 5 | criterion             | SupConLoss              | 0
 # ------------------------------------------------------------------

@@ -31,7 +31,7 @@ audio_encoder:
   layer_drop: 0.05
   max_audio_len: 138581
   pooling:
-    type: attentative_pooling
+    type: attentive_pooling
     degraded: false
     audio_projection_type: pre
   optim:
@@ -52,7 +52,7 @@ trainer:
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  default_root_dir: ./exp/sc_p_attPool_finegrained_pre
+  default_root_dir: ./exp/sc_p_attPool_finegrained_ResBBlkHook_pre
   log_every_n_steps: 2
   num_sanity_val_steps: 0
   # limit_train_batches: 2
