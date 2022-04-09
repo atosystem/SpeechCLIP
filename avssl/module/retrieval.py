@@ -3,64 +3,65 @@ from typing import Tuple
 import torch
 
 
-def audioImageRetrieval(
-    score_per_audio: torch.Tensor,
-    score_per_image: torch.Tensor,
-    AI_answers: torch.Tensor,
-    IA_answers: torch.Tensor,
+def mutualRetrieval(
+    score_per_A: torch.Tensor,
+    score_per_B: torch.Tensor,
+    AB_answers: torch.Tensor,
+    BA_answers: torch.Tensor,
     recall_at: list,
-) -> Tuple[dict, dict]:
-    """Audio Image Retrieval Code
+) -> Tuple[dict, dict, dict]:
+    """mutualRetrieval
+    A to B and B to A retrieval
+
 
     Args:
-        score_per_audio (torch.Tensor): tensor shape = (#audioSamples,#imageSamples)
-        score_per_image (torch.Tensor): tensor shape = (#imageSamples,#audioSamples)
-        AI_answers (torch.Tensor): tensor shape = (#audioSamples,)
-        IA_answers (torch.Tensor): tensor shape = (#imageSamples,)
-        recall_at (list): recall at ... ex : [1,5,10]
+        score_per_A (torch.Tensor): tensor shape = (#modalityA_samples,#modalityAB)
+        score_per_B (torch.Tensor): tensor shape = (#modalityAB,#modalityA_samples)
+        AB_answers (torch.Tensor): tensor shape = (#modalityA_samples,)
+        BA_answers (torch.Tensor): tensor shape = (#modalityAB
 
     Return:
-        Tuple( dict, dict) : recall_results_AI, recall_results_IA, recall_results_mean
+        Tuple( dict, dict) : recall_results_AB, recall_results_BA, recall_results_mean
     """
 
-    assert len(score_per_audio.shape) == 2
-    assert len(score_per_image.shape) == 2
-    assert len(AI_answers.shape) == 1
-    assert len(IA_answers.shape) == 1
+    assert len(score_per_A.shape) == 2
+    assert len(score_per_B.shape) == 2
+    assert len(AB_answers.shape) == 1
+    assert len(BA_answers.shape) == 1
 
-    assert score_per_audio.shape == (
-        len(AI_answers),
-        len(IA_answers),
-    ), "{} , {}".format(score_per_audio.shape, (len(AI_answers), len(IA_answers)))
-    assert score_per_image.shape == (
-        len(IA_answers),
-        len(AI_answers),
-    ), "{} , {}".format(score_per_image.shape, (len(IA_answers), len(AI_answers)))
+    assert score_per_A.shape == (
+        len(AB_answers),
+        len(BA_answers),
+    ), "{} , {}".format(score_per_A.shape, (len(AB_answers), len(BA_answers)))
+    assert score_per_B.shape == (
+        len(BA_answers),
+        len(AB_answers),
+    ), "{} , {}".format(score_per_B.shape, (len(BA_answers), len(AB_answers)))
 
-    score_per_audio = torch.argsort(score_per_audio, dim=1, descending=True).cpu()
-    score_per_image = torch.argsort(score_per_image, dim=1, descending=True).cpu()
+    score_per_A = torch.argsort(score_per_A, dim=1, descending=True).cpu()
+    score_per_B = torch.argsort(score_per_B, dim=1, descending=True).cpu()
 
     # AI : Audio -> Image, IA: Image -> Audio
-    rank_AI = IA_answers.reshape(1, -1).repeat(AI_answers.shape[0], 1)
-    rank_IA = AI_answers.reshape(1, -1).repeat(IA_answers.shape[0], 1)
+    rank_AI = BA_answers.reshape(1, -1).repeat(AB_answers.shape[0], 1)
+    rank_IA = AB_answers.reshape(1, -1).repeat(BA_answers.shape[0], 1)
 
-    assert rank_AI.shape == score_per_audio.shape, (
+    assert rank_AI.shape == score_per_A.shape, (
         rank_AI.shape,
-        score_per_audio.shape,
+        score_per_A.shape,
     )
-    assert rank_IA.shape == score_per_image.shape, (
+    assert rank_IA.shape == score_per_B.shape, (
         rank_IA.shape,
-        score_per_image.shape,
+        score_per_B.shape,
     )
 
-    for r in range(AI_answers.shape[0]):
-        rank_AI[r, :] = rank_AI[r, score_per_audio[r, :]]
+    for r in range(AB_answers.shape[0]):
+        rank_AI[r, :] = rank_AI[r, score_per_A[r, :]]
 
-    for r in range(IA_answers.shape[0]):
-        rank_IA[r, :] = rank_IA[r, score_per_image[r, :]]
+    for r in range(BA_answers.shape[0]):
+        rank_IA[r, :] = rank_IA[r, score_per_B[r, :]]
 
-    rank_AI = rank_AI == AI_answers.unsqueeze(-1)
-    rank_IA = rank_IA == IA_answers.unsqueeze(-1)
+    rank_AI = rank_AI == AB_answers.unsqueeze(-1)
+    rank_IA = rank_IA == BA_answers.unsqueeze(-1)
 
     recall_results_AI = {}
     recall_results_IA = {}
@@ -111,9 +112,9 @@ def audioImageRetrieval(
     # average one image corresponds to len(all_audo_feats) // len(all_img_feats) audio
     recall_results_IA["recall_random@1"] = 1
     _recall_at = 1
-    for i in range(len(AI_answers) // len(IA_answers)):
-        recall_results_IA["recall_random@1"] *= (len(AI_answers) - _recall_at - i) / (
-            len(AI_answers) - i
+    for i in range(len(AB_answers) // len(BA_answers)):
+        recall_results_IA["recall_random@1"] *= (len(AB_answers) - _recall_at - i) / (
+            len(AB_answers) - i
         )
 
     recall_results_IA["recall_random@1"] = 1 - recall_results_IA["recall_random@1"]

@@ -3,6 +3,7 @@ from avssl.data import (
     get_simple_image_transform,
     FlickrImageCaptionDataset,
     PlacesImageCaptionDataset,
+    FlickrDataset,
 )
 
 flickr_base_path = "/work/vjsalt22/dataset/flickr/"
@@ -21,6 +22,16 @@ places_json_file_val = (
 def get_flickr_dataset(split, image_transform=None):
     dataset = FlickrImageCaptionDataset(
         dataset_root=flickr_base_path, split=split, image_transform=image_transform
+    )
+    return dataset
+
+
+def get_flickr_general_dataset(split, image_transform=None):
+    dataset = FlickrDataset(
+        dataset_root=flickr_base_path,
+        split=split,
+        image_transform=image_transform,
+        modalities=["audio", "image", "text"],
     )
     return dataset
 
@@ -47,8 +58,27 @@ def try_Flickr(dataset):
     audio_feat, image, id = dataset[0]
     assert audio_feat.ndim == 1
     assert image.shape == (3, 224, 224)
-    assert isinstance(id, int)
+    assert isinstance(id, torch.LongTensor)
     assert isinstance(image, torch.Tensor)
+
+
+def try_FlickrGeneral(dataset):
+    _data = dataset[0]
+
+    assert "id" in _data
+    id = _data["id"]
+    assert isinstance(id, torch.LongTensor)
+
+    if "wav" in _data:
+        audio_feat = _data["wav"]
+        assert audio_feat.ndim == 1
+    if "image" in _data:
+        image = _data["image"]
+        assert image.shape == (3, 224, 224)
+        assert isinstance(image, torch.Tensor)
+    if "text" in _data:
+        text = _data["text"]
+        assert isinstance(text, torch.LongTensor)
 
 
 def test_dataset():
@@ -58,6 +88,13 @@ def test_dataset():
     for split, length in [("train", 30000), ("dev", 5000), ("test", 5000)]:
         dataset = get_flickr_dataset(split, image_transform)
         try_Flickr(dataset)
+        assert len(dataset) == length
+        del dataset
+
+    # Test General Flickr8k
+    for split, length in [("train", 30000), ("dev", 5000), ("test", 5000)]:
+        dataset = get_flickr_general_dataset(split, image_transform)
+        try_FlickrGeneral(dataset)
         assert len(dataset) == length
         del dataset
 

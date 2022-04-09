@@ -28,9 +28,9 @@ audio_encoder:
   layer_drop: 0.05
   max_audio_len: 138581
   pooling:
-    type: attentative_pooling
+    type: attentive_pooling
     degraded: false
-    audio_projection_type: pre
+    audio_projection_type: pre # pre: before pooling layer, post: after pooling layer
   optim:
     name: Adam
     args:
@@ -53,7 +53,7 @@ trainer:
   log_every_n_steps: 2
   num_sanity_val_steps: 0
   # limit_train_batches: 2
-  # limit_val_batches: 4
+  limit_val_batches: 8
 
 
 # learnable U
@@ -61,5 +61,5 @@ trainer:
 # 0 | audio_encoder         | S3prlSpeechEncoder      | 94.7 M
 # 1 | clip                  | ClipModel               | 151 M 
 # 2 | audio_feat_projection | Linear                  | 393 K 
-# 3 | audio_pooling         | AttentativePoolingLayer | 262 K 
+# 3 | audio_pooling         | AttentivePoolingLayer   | 262 K 
 # 4 | criterion             | SupConLoss              | 0    
