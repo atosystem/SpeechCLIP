@@ -1,4 +1,4 @@
-from .speechclip_p import (  # for original CLIP text image retrieval; text audio retrieval
+from .speechclip_p import (
     ParallelClipTextImage,
     ParallelSpeechClip_AttPool,
     ParallelSpeechClip_AttPool_FineGrain,
