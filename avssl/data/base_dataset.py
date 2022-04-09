@@ -99,6 +99,10 @@ class BaseImageCaptionDataset(Dataset):
 
 
 class BaseDataset(Dataset):
+    """BaseDataset
+    Generalized for modalities (Image,Audio,Text)
+    """
+
     def __init__(
         self,
         dataset_root: str = "",
@@ -109,9 +113,22 @@ class BaseDataset(Dataset):
         target_sr: int = 16_000,
         load_audio: bool = True,
         load_image: bool = True,
-        load_test: bool = True,
+        tokenizeText: bool = True,
         **kwargs,
     ):
+        """init
+
+        Args:
+            dataset_root (str, optional): dataset_root. Defaults to "".
+            dataset_json_file (str, optional): Defaults to "".
+            split (str, optional): data split. Defaults to "train".
+            image_transform (, optional):  Defaults to None.
+            audio_transform (, optional):  Defaults to None.
+            target_sr (int, optional): Defaults to 16_000.
+            load_audio (bool, optional): load audio file to tensor. Defaults to True.
+            load_image (bool, optional): load image file to tensor. Defaults to True.
+            tokenizeText (bool, optional): tokenize text input with clip tokenizer. Defaults to True.
+        """
         assert split in {"train", "dev", "test"}
         self.split = split
 
@@ -122,6 +139,7 @@ class BaseDataset(Dataset):
         self.target_sr = target_sr
         self.load_audio = load_audio
         self.load_image = load_image
+        self.tokenizeText = tokenizeText
 
         self.data = []
 
@@ -165,8 +183,11 @@ class BaseDataset(Dataset):
 
         return img
 
-    def _TokenizeText(self, texts: Union[str, List[str]]) -> torch.LongTensor:
-        return clip.tokenize(texts=texts, context_length=77, truncate=False)
+    def _TokenizeText(self, texts: Union[str, List[str]]):
+        if self.tokenizeText:
+            return clip.tokenize(texts=texts, context_length=77, truncate=False)
+        else:
+            return texts
 
     def __getitem__(self, index):
         """Get a sample
@@ -178,7 +199,7 @@ class BaseDataset(Dataset):
             Dict
                 wav : torch.FloatTensor: audio features (T, D)
                 image : torch.FloatTensor: image (3, H, W)
-                text : torch.LongTensor:  tokenized text
+                text : torch.LongTensor:
                 id :  torch.LongTensor
         """
 
