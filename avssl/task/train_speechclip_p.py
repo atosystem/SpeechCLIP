@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 
 from avssl.base import OrderedNamespace
 from avssl.data import FlickrDataset, PlacesImageCaptionDataset, collate_general
-from avssl.model import (
+from avssl.model import (  # for original CLIP; for text audio retrieval
     ParallelClipTextImage,
     ParallelSpeechClip_AttPool,
     ParallelSpeechClip_AttPool_FineGrain,

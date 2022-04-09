@@ -351,13 +351,46 @@ class ParallelSpeechClip_AttPool(ParallelSpeechClipBase):
 
         return audio_feat, image_feat
 
-    def log_grad_norm(self, grad_norm_dict):
+    def forward(
+        self,
+        batch,
+        cal_loss: bool = False,
+        full_utt: bool = False,
+        ret_pre_pooling: bool = False,
+    ) -> dict:
+        wav = batch["wav"]
+        wav_len = batch["wav_len"]
+        images = batch["image"]
+        id = batch["id"]
+        id = torch.cat(id, dim=0)
+        audio_feat, audio_feat_len = self.forward_audio(wav, wav_len, full_utt=True)
+        image_feat = self.forward_image(images)
+
+        prePool_audio = audio_feat, audio_feat_len
+        prePool_image = image_feat
+
+        audio_feat, image_feat = self.pool_features(
+            audio_feat, audio_feat_len, image_feat
+        )
+
+        # image_feat is actually the same, since each image is presented with only one vector
+
+        if cal_loss:
+
+            audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
+            image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
+
+            loss = self.criterion(
+                features=torch.stack([audio_feat, image_feat], dim=1),
+                labels=id,
+            )
+
+            if not ret_pre_pooling:
+                return loss, audio_feat, image_feat, id
+            else:
+                return loss, prePool_audio, prePool_image, id
 
         self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-
-    def training_step(self, batch, batch_idx):
-        loss, audio_feat, image_feat = self.forward(batch, cal_loss=True)
-        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
         # print("val")
