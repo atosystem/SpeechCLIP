@@ -4,6 +4,9 @@ exp/
 .tmp_tools/
 .conda_config/
 
+# stat for experiments
+avssl/stats/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
