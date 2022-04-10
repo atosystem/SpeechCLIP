@@ -169,7 +169,7 @@ class GumbelVectorQuantizer(nn.Module):
 
         # k is the indices of the largest logits among num_vars
         _, k = x.max(-1)
-        
+
         # hard_x: one hot for the choosen codewords ( bsz * tsz, self.groups, num_vars )
         hard_x = (
             x.new_zeros(*x.shape)
@@ -232,8 +232,5 @@ class GumbelVectorQuantizer(nn.Module):
 
         result["x"] = x
         result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
-
-        print("result",result)
-        exit(1)
 
         return result
