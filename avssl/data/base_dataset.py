@@ -8,7 +8,7 @@ import librosa
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-
+import pickle
 
 class BaseImageCaptionDataset(Dataset):
     def __init__(
@@ -35,6 +35,9 @@ class BaseImageCaptionDataset(Dataset):
         self.load_image = load_image
 
         self.data = []
+
+        with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
+            self.token_mapping = pickle.load(fp)
 
     def _LoadAudio(self, path: str):
         """Load audio from file

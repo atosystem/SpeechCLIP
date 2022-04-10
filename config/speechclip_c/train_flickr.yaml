@@ -42,7 +42,7 @@ audio_encoder:
 vq:
   activation: gelu # relu or gelu
   type: gumbel # which type of quantizer to use, gumbel or kmeans
-  num_vars: 49408 # project to this many vector quantized variables per group, 49408
+  num_vars: 8112 # project to this many vector quantized variables per group, 49408
   groups: 1 # number of groups of latent variables
   vq_dim: 0 # uses this dimensionality for quantized vectors. 0 to use model dim // groups
   weight_proj_depth: 1 # number of layers for vq weight projection

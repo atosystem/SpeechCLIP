@@ -222,7 +222,6 @@ class GumbelVectorQuantizer(nn.Module):
             )
 
         x = x.unsqueeze(-1) * vars
-        # print(x.dtype)
         x = x.view(bsz * tsz, self.groups, self.num_vars, -1)
         x = x.sum(-2).type_as(x)
         x = x.view(bsz, tsz, -1)

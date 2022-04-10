@@ -21,11 +21,13 @@ from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
 
+import pickle
 
 class CascadedSpeechClip(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
         # self.automatic_optimization = False
+        # self.device = config.clip.device
         self.audio_encoder_type = config.audio_encoder.type
         if self.audio_encoder_type == "s3prl":
             self.audio_encoder = S3prlSpeechEncoder(**config.audio_encoder)
@@ -40,9 +42,9 @@ class CascadedSpeechClip(BaseLightningModel):
             precision=config.trainer.precision,
             **config.clip,
         )
-        self.text_embd = self.clip.text_embd
-        self.text_embd_dim = self.text_embd.weight.size(-1)
 
+        self.text_embd_dim = self.clip.text_embd.weight.size(-1)
+        
         self.downsampling = nn.Sequential(
             nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
             nn.AvgPool1d(2, 2, 0),
@@ -81,7 +83,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 gamma=config.vq.gamma,
-                init_codebook=self.text_embd.weight,
+                init_codebook=self.clip.used_text_embd_weight,
             )
         else:
             assert (
