@@ -107,10 +107,8 @@ class ClipModel(nn.Module):
         """
         res = clip.tokenize(sents).to(self.device)
         for sent in res:
-            print(sent)
             for token in sent:
                 token = self.token_mapping[token]
-            print(sent)
         return res
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
