@@ -3,7 +3,16 @@ data:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
   batch_size: 3
+  dev_batch_size: 3
   split_ratio: 0.9
+
+cl_loss:
+  temperature: 1
+  base_temperature: 1
+  contrast_mode: all
+
+retrieval:
+  recall_at: [1,5,10]
 
 clip:
   name: ViT-B/32
@@ -40,6 +49,7 @@ vq:
   combine_groups: false # bool, if set, variables are shared among groups
   temp: [2.0, 0.5, 0.999995] # temperature for latent variable sampling with gumbel softmax. should be a tuple of 3 values (start, end, decay)
   gamma: 0.25 # gamma parameter for kmeans style vector quantization
+  beta: 0.5 # weight for vq auxiliary loss, total_loss = CL_loss + beta * vq_loss
 
 trainer:
   max_steps: 5000
@@ -50,4 +60,6 @@ trainer:
   logger: true
   log_every_n_steps: 1
   default_root_dir: exp/sc_c_tmp
-  track_grad_norm: 2
+  num_sanity_val_steps: 0
+  # limit_train_batches: 2
+  # limit_val_batches: 8

@@ -1,5 +1,4 @@
-import imp
-from re import sub
+import logging
 from typing import Tuple, Union
 
 import numpy as np
@@ -7,7 +6,13 @@ import torch
 from torch import nn
 
 from avssl.base import OrderedNamespace
-from avssl.module import ClipModel, MeanPoolingLayer, S3prlSpeechEncoder
+from avssl.module import (
+    ClipModel,
+    MeanPoolingLayer,
+    S3prlSpeechEncoder,
+    SupConLoss,
+    mutualRetrieval,
+)
 from avssl.module.speechclip_c_modules import (
     GumbelVectorQuantizer,
     KmeansVectorQuantizer,
@@ -65,7 +70,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 activation=activation,
                 weight_proj_depth=config.vq.depth,
                 weight_proj_factor=2,
-                init_codebook=self.text_embd.weight,
+                # init_codebook=self.text_embd.weight,
             )
         elif config.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -85,7 +90,15 @@ class CascadedSpeechClip(BaseLightningModel):
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.recall_at = config.retrieval.recall_at
+
+        self.beta = config.vq.beta
+
+        self.criterion = SupConLoss(
+            temperature=config.cl_loss.temperature,
+            contrast_mode=config.cl_loss.contrast_mode,
+            base_temperature=config.cl_loss.base_temperature,
+        )
 
     def forward_audio(
         self,
@@ -121,68 +134,138 @@ class CascadedSpeechClip(BaseLightningModel):
         text_feat = self.clip.encode_text(text_tensor)
         return text_feat
 
+    def reportRetrieval(self, score_per_audio, score_per_image, AI_answers, IA_answers):
+        recall_results_AI, recall_results_IA, recall_results_mean = mutualRetrieval(
+            score_per_A=score_per_audio,
+            score_per_B=score_per_image,
+            AB_answers=AI_answers,
+            BA_answers=IA_answers,
+            recall_at=self.recall_at,
+        )
+
+        self.log("val_recall_AI", recall_results_AI)
+        self.log("val_recall_IA", recall_results_IA)
+        self.log("val_recall_mean", recall_results_mean)
+        self.log("val_recall_mean_1", recall_results_mean["recall@1"])
+
     def forward(
         self,
         batch,
         cal_loss: bool = False,
     ) -> dict:
-        wav, wav_len, images, id = batch
+        wav = batch["wav"]
+        wav_len = batch["wav_len"]
+        image = batch["image"]
+        id = batch["id"]
+        id = torch.cat(id, dim=0)
+
         audio_feat, audio_feat_len = self.forward_audio(wav, wav_len)
-        image_feat = self.forward_image(images)
+        image_feat = self.forward_image(image)
 
         #  down sampling
         audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
         audio_feat = self.downsampling(audio_feat)
 
         # vector quantization
-        result = self.vector_quantizer(audio_feat, produce_targets=True)
+        vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
 
-        if result["subword_prob"].size(1) > 77:
-            result["subword_prob"] = result["subword_prob"][:, :77, :]
+        if vq_result["subword_prob"].size(1) > 77:
+            vq_result["subword_prob"] = vq_result["subword_prob"][:, :77, :]
 
-        # subword_idx = torch.zeros(bsz, max_len)
-        # for i in range(bsz):
-        #     idx = torch.argmax(subword_prob[i], -1)
-        #     if len(idx) > max_len:
-        #         idx = idx[:max_len]
-        #     subword_idx[i, :len(idx)] = idx
-        
-        # subword_idx = subword_idx.int().to(self.device)
-        text_feat = self.clip.encode_text(result)
+        audio_feat = self.clip.encode_subword(vq_result)
 
         if cal_loss:
-            text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
+            audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
 
-            logit_scale = self.logit_scale.exp()
-            logits_per_text = logit_scale * text_feat @ image_feat.t()
-            logits_per_image = logits_per_text.t()
-
-            labels = torch.arange(
-                len(logits_per_text), device=logits_per_text.device, dtype=torch.long
+            cl_loss = self.criterion(
+                features=torch.stack([audio_feat, image_feat], dim=1),
+                labels=id,
             )
-            loss_text = self.criterion(logits_per_text, labels)
-            loss_image = self.criterion(logits_per_image, labels)
-            loss = (loss_text + loss_image) / 2
-            return loss, text_feat, image_feat
 
-            loss = (result["loss"] + loss_text + loss_image) / 3
+            loss = vq_result["loss"] * self.beta + cl_loss
 
-            return loss, text_feat, image_feat, result
+            return loss, audio_feat, image_feat, vq_result, id
 
-        return text_feat, image_feat, result
+        return audio_feat, image_feat, vq_result, id
+
+    def training_step(self, batch, batch_idx):
+        loss, _, _, res, _ = self.forward(batch, cal_loss=True)
+
+        result = {}
+        for key in res.keys():
+            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
+                result[key] = res[key]
+
+        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
+        # opts, _ = self.configure_optimizers()
+        # for opt in opts:
+        #     opt.zero_grad()
+        #     # automatically applies scaling, etc...
+        #     self.manual_backward(loss)
+        #     opt.step()
+        self.log("train_loss", loss)
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
-        loss, _, _, res = self.forward(batch, cal_loss=True)
+        loss, audio_feat, image_feat, res, id = self.forward(batch, cal_loss=True)
+        loss = loss.detach().cpu()
+        audio_feat = audio_feat.detach().cpu()
+        image_feat = image_feat.detach().cpu()
+        id = id.detach().cpu()
 
         result = {"val_loss": loss}
         for key in res.keys():
             if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
                 result[key] = res[key]
 
-    def log_grad_norm(self, grad_norm_dict):
-        print(grad_norm_dict)
-        self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return {
+            "id": id,
+            "audio_feat": audio_feat,
+            "image_feat": image_feat,
+        }
+
+    # def log_grad_norm(self, grad_norm_dict):
+    #     print(grad_norm_dict)
+    #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
+
+    def validation_epoch_end(self, outputs):
+        all_ids = torch.cat([x["id"] for x in outputs], dim=0)
+        all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
+        id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_imgs)}
+
+        del all_imgs
+
+        all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
+        all_audo_feats_id = all_ids
+
+        all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
+        all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
+
+        print(
+            "Total #{} images, #{} audio".format(
+                len(all_img_feats), len(all_audo_feats)
+            )
+        )
+
+        # calculate dot product
+        score_per_audio = torch.matmul(
+            all_audo_feats.to(self.device), all_img_feats.T.to(self.device)
+        )
+        score_per_image = score_per_audio.T
+
+        # AI : Audio -> Image, IA: Image -> Audio
+        AI_answers = all_audo_feats_id
+        IA_answers = all_img_feats_id
+
+        self.reportRetrieval(
+            score_per_audio=score_per_audio,
+            score_per_image=score_per_image,
+            AI_answers=AI_answers,
+            IA_answers=IA_answers,
+        )
 
     def configure_optimizers(self):
         optimizers = []
@@ -228,23 +311,3 @@ class CascadedSpeechClip(BaseLightningModel):
             )
 
         return optimizers, schedulers
-
-    def training_step(self, batch, batch_idx):
-        loss, text_feat, image_feat, res = self.forward(batch, cal_loss=True)
-
-        result = {}
-        for key in res.keys():
-            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
-                result[key] = res[key]
-
-        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-
-        # opts, _ = self.configure_optimizers()
-        loss, text_feat, image_feat = self.forward(batch, cal_loss=True)
-        # for opt in opts:
-        #     opt.zero_grad()
-        #     # automatically applies scaling, etc...
-        #     self.manual_backward(loss)
-        #     opt.step()
-
-        return {"loss": loss}

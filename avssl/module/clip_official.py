@@ -51,8 +51,30 @@ class ClipModel(nn.Module):
         self.out_dim = self.model.transformer.width
         self.text_embd = self.model.token_embedding
 
-        # assert codebook_size > 0, f"wrong code book size"
-        # self.linear_proj = nn.Linear(codebook_size, 49408)
+        self.freeze_models()
+
+    def freeze_models(self):
+        """Freeze Models if required"""
+
+        if not self.image_encoder_trainable:
+            # freeze visual
+            for p in self.model.visual.parameters():
+                p.requires_grad = False
+
+        if not self.text_encoder_trainable:
+            for p in self.model.token_embedding.parameters():
+                p.requires_grad = False
+
+            self.model.positional_embedding.requires_grad = False
+
+            for p in self.model.transformer.parameters():
+                p.requires_grad = False
+
+            for p in self.model.ln_final.parameters():
+                p.requires_grad = False
+
+            self.model.text_projection.requires_grad = False
+            self.model.logit_scale.requires_grad = False
 
     def prep_image(self, paths: list) -> torch.Tensor:
         """Prepare image tensor
@@ -89,11 +111,7 @@ class ClipModel(nn.Module):
         Returns:
             torch.Tensor: Image features. (B, D)
         """
-        if self.image_encoder_trainable:
-            return self.model.encode_image(image)
-        else:
-            with torch.no_grad():
-                return self.model.encode_image(image)
+        return self.model.encode_image(image)
 
     def encode_subword_prob(self, result: dict) -> torch.Tensor:
         # start token embd = 49406, end token embd = 49407
@@ -102,10 +120,11 @@ class ClipModel(nn.Module):
         prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
         paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
+        paddings = self.text_embd(paddings)
+
         weighted_embd = prob @ self.text_embd.weight
-        x = torch.cat(
-            (weighted_embd, self.text_embd(paddings)), dim=1
-        )  # [batch_size, n_ctx, d_model]
+
+        x = torch.cat((weighted_embd, paddings), dim=1)  # [batch_size, n_ctx, d_model]
 
         x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -125,28 +144,18 @@ class ClipModel(nn.Module):
         Returns:
             torch.Tensor: Text features. (B, D)
         """
-        if self.text_encoder_trainable:
-            return self.model.encode_text(text)
-        else:
-            with torch.no_grad():
-                return self.model.encode_text(text)
+        return self.model.encode_text(text)
 
-    # def encode_text(self, prob: torch.Tensor) -> torch.Tensor:
-    #     """Encode a batch of sentences.
+    def encode_subword(self, prob: torch.Tensor) -> torch.Tensor:
+        """Encode a batch of subwords.
 
-    #     Args:
-    #         text (torch.Tensor): Sentences. (B, L)
+        Args:
+            text (torch.Tensor): Sentences. (B, L)
 
-    #     Returns:
-    #         torch.Tensor: Text features. (B, D)
-    #     """
-    #     if self.text_encoder_trainable:
-    #         # return self.model.encode_text(text)
-    #         return self.encode_subword_prob(prob)
-    #     else:
-    #         with torch.no_grad():
-    #             # return self.model.encode_text(text)
-    #             return self.encode_subword_prob(prob)
+        Returns:
+            torch.Tensor: Text features. (B, D)
+        """
+        return self.encode_subword_prob(prob)
 
     def get_scores(self, image: torch.Tensor, text: torch.Tensor) -> tuple:
         """Get logit scores between the images and text sentences.
@@ -158,11 +167,12 @@ class ClipModel(nn.Module):
         Returns:
             tuple: (logits_per_image, logits_per_text) ((B_image, B_text), (B_text, B_image))
         """
-        if self.text_encoder_trainable and self.image_encoder_trainable:
-            return self.model(image, text)
-        else:
-            with torch.no_grad():
-                return self.model(image, text)
+        return self.model(image, text)
+        # if self.text_encoder_trainable and self.image_encoder_trainable:
+        #     return self.model(image, text)
+        # else:
+        #     with torch.no_grad():
+        #         return self.model(image, text)
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
