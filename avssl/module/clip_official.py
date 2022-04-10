@@ -2,6 +2,7 @@ import clip
 import torch
 from PIL import Image
 from torch import nn
+import pickle
 
 _clip_models = {
     "RN50",
@@ -34,12 +35,11 @@ class ClipModel(nn.Module):
         """
         super().__init__()
         assert name in _clip_models
-
         self.name = name
         self.device = device
 
         self.model, self.image_preprocess = clip.load(name, device)
-
+        
         if precision == 16:
             self.model.half()
         elif precision == 32:
@@ -50,6 +50,11 @@ class ClipModel(nn.Module):
 
         self.out_dim = self.model.transformer.width
         self.text_embd = self.model.token_embedding
+
+        with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
+            self.token_mapping = pickle.load(fp)
+        ids = torch.tensor( list(self.token_mapping.keys()) ).to(self.device)
+        self.used_text_embd_weight = self.text_embd(ids).detach()
 
         self.freeze_models()
 
@@ -100,7 +105,13 @@ class ClipModel(nn.Module):
         Returns:
             torch.Tensor: _description_
         """
-        return clip.tokenize(sents).to(self.device)
+        res = clip.tokenize(sents).to(self.device)
+        for sent in res:
+            print(sent)
+            for token in sent:
+                token = self.token_mapping[token]
+            print(sent)
+        return res
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
         """Encode a batch of images.
@@ -122,7 +133,13 @@ class ClipModel(nn.Module):
         paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
         paddings = self.text_embd(paddings)
 
-        weighted_embd = prob @ self.text_embd.weight
+        # paddings, pad_embd_idx = [], self.token_mapping[0]
+        # for i in range( bsz* (max_len - seq_len) ):
+        #     paddings.append(self.used_text_embd_weight[pad_embd_idx])
+        # paddings = torch.stack(paddings, dim=0)
+        # paddings = paddings.view(bsz, (max_len - seq_len), -1)
+
+        weighted_embd = prob @ self.used_text_embd_weight
 
         x = torch.cat((weighted_embd, paddings), dim=1)  # [batch_size, n_ctx, d_model]
 
