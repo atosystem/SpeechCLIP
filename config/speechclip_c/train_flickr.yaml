@@ -3,7 +3,7 @@ data:
     name: flickr
     dataset_root: /work/vjsalt22/dataset/flickr/
     text_file: Flickr8k.token.txt
-  batch_size: 12
+  batch_size: 16
   dev_batch_size: 8
   split_ratio: 0.9
 

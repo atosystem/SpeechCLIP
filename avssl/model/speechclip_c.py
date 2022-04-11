@@ -205,6 +205,8 @@ class CascadedSpeechClip(BaseLightningModel):
         batch,
         cal_loss: bool = False,
     ) -> dict:
+        max_len = 75
+
         def conv1d_length(
             length: Union[torch.Tensor, list],
             kernel: int,
@@ -216,12 +218,16 @@ class CascadedSpeechClip(BaseLightningModel):
                 length[i] = math.floor(
                     (length[i] + 2 * pad - dilation * (kernel - 1)) / stride + 1
                 )
+                if length[i] > max_len:
+                    length[i] = max_len
 
         def mean_length(
             length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int
         ):
             for i in range(length.size(0)):
                 length[i] = math.floor((length[i] + 2 * pad - kernel) / stride + 1)
+                if length[i] > max_len:
+                    length[i] = max_len
 
         wav = batch["wav"]
         wav_len = batch["wav_len"]
@@ -284,14 +290,17 @@ class CascadedSpeechClip(BaseLightningModel):
         conv1d_length(audio_len, 2, 2, 0, 1)
         mean_length(audio_len, 2, 2, 0)
         conv1d_length(audio_len, 2, 2, 0, 1)
-        
+
         # vector quantization
         if self.vq_type == "gumbel":
             self.vector_quantizer.set_num_updates(self.global_step)
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
+        if vq_result["subword_prob"].size(1) > max_len:
+            vq_result["subword_prob"] = vq_result["subword_prob"][:, :max_len, :]
+        if vq_result["targets"].size(1) > max_len:
+            vq_result["targets"] = vq_result["targets"][:, :max_len, :]
 
-        # mutliply subword distribution with clip text embeddings
-        audio_feat = self.clip.encode_subword(vq_result, audio_len, self.vq_type)
+        audio_feat = self.clip.encode_subword(vq_result, audio_len)
         if cal_loss:
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
@@ -304,21 +313,9 @@ class CascadedSpeechClip(BaseLightningModel):
                 features=torch.stack([audio_feat, image_feat], dim=1),
                 labels=id,
             )
-            if q_loss is not None:
-                loss = (
-                    vq_result["loss"] * self.beta + cl_loss + self.cif_lamda_c * q_loss
-                )
-            else:
-                loss = vq_result["loss"] * self.beta + cl_loss
-            losses = {
-                "loss": loss,
-                "vq_loss": vq_result["loss"].detach(),
-                "cl_loss": cl_loss.detach(),
-            }
-            if q_loss is not None:
-                losses.update({"q_loss": q_loss.detach()})
+            loss = vq_result["loss"] * self.beta + cl_loss
 
-            return losses, audio_feat, image_feat, vq_result, id
+            return loss, audio_feat, image_feat, vq_result, id
 
         return audio_feat, image_feat, vq_result, id
 
