@@ -1,7 +1,6 @@
 import json
 import logging
 import math
-import os
 import pickle
 from typing import Tuple, Union
 
@@ -206,8 +205,6 @@ class CascadedSpeechClip(BaseLightningModel):
         batch,
         cal_loss: bool = False,
     ) -> dict:
-        max_len = 75
-
         def conv1d_length(
             length: Union[torch.Tensor, list],
             kernel: int,
@@ -219,16 +216,12 @@ class CascadedSpeechClip(BaseLightningModel):
                 length[i] = math.floor(
                     (length[i] + 2 * pad - dilation * (kernel - 1)) / stride + 1
                 )
-                if length[i] > max_len:
-                    length[i] = max_len
 
         def mean_length(
             length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int
         ):
             for i in range(length.size(0)):
                 length[i] = math.floor((length[i] + 2 * pad - kernel) / stride + 1)
-                if length[i] > max_len:
-                    length[i] = max_len
 
         wav = batch["wav"]
         wav_len = batch["wav_len"]
