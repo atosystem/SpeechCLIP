@@ -202,48 +202,87 @@ class ClipModel(nn.Module):
         self, result: dict, audio_len: torch.Tensor
     ) -> torch.Tensor:
         # start token embd = 49406, end token embd = 49407
-        prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
-        bsz, seq_len, max_len = prob.size(0), prob.size(1), 75
-        paddings = None
-        if max_len - seq_len > 0:
-            paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
-            paddings = self.model.token_embedding(paddings)
-        # assert paddings.device == self.model.token_embedding.weight.device, "{} {}".format(paddings.device , self.model.token_embedding.weight.device)
+        prob, token_idx = result["subword_prob"], result["targets"].squeeze(-1)
 
-        # paddings, pad_embd_idx = [], self.token_mapping[0]
-        # for i in range( bsz* (max_len - seq_len) ):
-        #     paddings.append(self.used_text_embd_weight[pad_embd_idx])
-        # paddings = torch.stack(paddings, dim=0)
-        # paddings = paddings.view(bsz, (max_len - seq_len), -1)
+        bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
 
-        # if self.reduced_embedding_weight is not None:
-        #     paddings = paddings @ self.reduced_embedding_weight
-        #     weighted_embd = prob @ self.reduced_embedding_weight
-        # else:
+        assert seq_len == token_idx.shape[1], "{} {}".format(
+            seq_len, token_idx.shape[1]
+        )
 
-        weighted_embd = prob @ self.model.token_embedding.weight
+        # 2,3
+        sot_idx, eot_idx = torch.tensor([self.startOfTxt_reduced]).to(
+            self.device
+        ), torch.tensor([self.endOfTxt_reduced]).to(self.device)
 
-        sot_idx = torch.tensor([self.startOfTxt_reduced]).unsqueeze(0).to(self.device)
-        eot_idx = torch.tensor([self.endOfTxt_reduced]).unsqueeze(0).to(self.device)
-        sot = self.model.token_embedding(sot_idx)
-        eot = self.model.token_embedding(eot_idx)
+        sot_emb = self.model.token_embedding(sot_idx)
+        eot_emb = self.model.token_embedding(eot_idx)
 
-        new_idx, new_weighted_embd = [], []
-        for len, i, embd in zip(audio_len, idx, weighted_embd):
-            i, embd = i.unsqueeze(0), embd.unsqueeze(0)
-            cat_i, cat_embd = [sot_idx, i[:len], eot_idx], [sot, embd[:len], eot]
-            if i[len:].size(0) > 0:
-                cat_i.append(i[len:])
-            if embd[len:].size(0) > 0:
-                cat_embd.append(embd[len:])
-            new_idx.append(torch.cat(cat_i, dim=1))
-            new_weighted_embd.append(torch.cat(cat_embd, dim=1))
+        weighted_subword_embd = prob @ self.model.token_embedding.weight
 
-        idx = torch.cat(new_idx, dim=0)
-        weighted_embd = torch.cat(new_weighted_embd, dim=0)
-        x = weighted_embd  # [batch_size, n_ctx, d_model]
-        if paddings is not None:
-            x = torch.cat((x, paddings), dim=1)
+        # prepend sot token in the front
+        token_idx = torch.cat([sot_idx.unsqueeze(0).repeat(bsz, 1), token_idx], dim=1)
+        weighted_subword_embd = torch.cat(
+            [sot_emb.unsqueeze(0).repeat(bsz, 1, 1), weighted_subword_embd], dim=1
+        )
+
+        # truncate
+        token_idx = token_idx[:, :max_len]
+        weighted_subword_embd = weighted_subword_embd[:, :max_len, :]
+
+        seq_len = weighted_subword_embd.size(1)
+
+        # pad to max len = 77
+        paddings_idx = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
+        paddings = self.model.token_embedding(paddings_idx)
+
+        token_idx = torch.cat((token_idx, paddings_idx), dim=1)
+        weighted_subword_embd = torch.cat((weighted_subword_embd, paddings), dim=1)
+        del paddings_idx
+        del paddings
+
+        assert token_idx.shape == (bsz, max_len), "{} {}".format(
+            token_idx.shape, (bsz, max_len)
+        )
+        assert weighted_subword_embd.shape == (
+            bsz,
+            max_len,
+            self.model.token_embedding.embedding_dim,
+        ), "{} {}".format(
+            weighted_subword_embd.shape,
+            (bsz, max_len, self.model.token_embedding.embedding_dim),
+        )
+
+        # insert eot
+        for i, _audio_len in enumerate(audio_len):
+            if _audio_len >= max_len - 2:
+                # audio len too long
+                token_idx[i, -1] = eot_idx
+                weighted_subword_embd[:, -1, :] = eot_emb
+            else:
+                token_idx[i, _audio_len + 1] = eot_idx
+                weighted_subword_embd[:, _audio_len + 1, :] = eot_emb
+
+                # padding for timesteps after eot is inserted
+                token_idx[i, _audio_len + 1 + 1 :] = torch.zeros(
+                    max_len - (_audio_len + 2)
+                )
+                weighted_subword_embd[
+                    i, _audio_len + 1 + 1 :, :
+                ] = self.model.token_embedding(
+                    torch.zeros(max_len - (_audio_len + 2)).int().to(self.device)
+                )
+
+        assert token_idx.shape == (bsz, max_len)
+        assert weighted_subword_embd.shape == (
+            bsz,
+            max_len,
+            self.model.token_embedding.embedding_dim,
+        )
+
+        del sot_idx, eot_idx, sot_emb, eot_emb
+
+        x = weighted_subword_embd
         x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.model.transformer(x)

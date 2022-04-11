@@ -295,10 +295,9 @@ class CascadedSpeechClip(BaseLightningModel):
         if self.vq_type == "gumbel":
             self.vector_quantizer.set_num_updates(self.global_step)
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
-        if vq_result["subword_prob"].size(1) > max_len:
-            vq_result["subword_prob"] = vq_result["subword_prob"][:, :max_len, :]
-        if vq_result["targets"].size(1) > max_len:
-            vq_result["targets"] = vq_result["targets"][:, :max_len, :]
+
+        # if vq_result["subword_prob"].size(1) > 75:
+        #     vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
 
         audio_feat = self.clip.encode_subword(vq_result, audio_len)
         if cal_loss:
