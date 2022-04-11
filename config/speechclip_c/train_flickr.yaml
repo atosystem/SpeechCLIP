@@ -36,8 +36,8 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 500
-    max_step: 5000
+    warmup: 12000
+    max_step: 120000
     final_lr: 1.e-8
 
 vq:
@@ -53,8 +53,8 @@ vq:
   beta: 0.5 # weight for vq auxiliary loss, total_loss = CL_loss + beta * vq_loss
 
 trainer:
-  max_steps: 5000
-  gradient_clip_val: 0.5
+  max_steps: 120000
+  gradient_clip_val: 5
   accumulate_grad_batches: 8
   check_val_every_n_epoch: 1
   precision: 32
