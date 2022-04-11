@@ -90,6 +90,7 @@ class ClipModel(nn.Module):
             self.startOfTxt_reduced = self.original2Reduced[
                 self.tokenizer.encoder["<|startoftext|>"]
             ]
+
             self.endOfTxt_reduced = self.original2Reduced[
                 self.tokenizer.encoder["<|endoftext|>"]
             ]
@@ -295,7 +296,6 @@ class ClipModel(nn.Module):
             ]
             @ self.model.text_projection
         )
-
         # x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
         return x
 

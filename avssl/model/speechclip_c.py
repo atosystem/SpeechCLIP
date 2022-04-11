@@ -160,6 +160,8 @@ class CascadedSpeechClip(BaseLightningModel):
         batch,
         cal_loss: bool = False,
     ) -> dict:
+        max_len = 75
+
         def conv1d_length(
             length: Union[torch.Tensor, list],
             kernel: int,
@@ -171,12 +173,16 @@ class CascadedSpeechClip(BaseLightningModel):
                 length[i] = math.floor(
                     (length[i] + 2 * pad - dilation * (kernel - 1)) / stride + 1
                 )
+                if length[i] > max_len:
+                    length[i] = max_len
 
         def mean_length(
             length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int
         ):
             for i in range(length.size(0)):
                 length[i] = math.floor((length[i] + 2 * pad - kernel) / stride + 1)
+                if length[i] > max_len:
+                    length[i] = max_len
 
         wav = batch["wav"]
         wav_len = batch["wav_len"]
@@ -208,7 +214,6 @@ class CascadedSpeechClip(BaseLightningModel):
         #     vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
 
         audio_feat = self.clip.encode_subword(vq_result, audio_len)
-
         if cal_loss:
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
@@ -221,7 +226,6 @@ class CascadedSpeechClip(BaseLightningModel):
                 features=torch.stack([audio_feat, image_feat], dim=1),
                 labels=id,
             )
-
             loss = vq_result["loss"] * self.beta + cl_loss
 
             return loss, audio_feat, image_feat, vq_result, id

@@ -7,5 +7,5 @@ python3 run_task.py \
     --gpus 1 \
     --njobs 2 \
     --seed 7122 \
-    --save_path "exp/sc_c_tmp" \
+    --save_path "exp/sc_c" \
     --train
