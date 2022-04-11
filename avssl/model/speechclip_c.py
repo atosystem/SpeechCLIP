@@ -1,8 +1,8 @@
 import logging
+import math
 import pickle
 from typing import Tuple, Union
 
-import math
 import numpy as np
 import torch
 from jiwer import cer, wer
@@ -160,16 +160,24 @@ class CascadedSpeechClip(BaseLightningModel):
         batch,
         cal_loss: bool = False,
     ) -> dict:
-
-        def conv1d_length(length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int, dilation: int):
+        def conv1d_length(
+            length: Union[torch.Tensor, list],
+            kernel: int,
+            stride: int,
+            pad: int,
+            dilation: int,
+        ):
             for i in range(length.size(0)):
-                length[i] = math.floor( (length[i] + 2*pad - dilation*(kernel-1))/stride + 1 )
+                length[i] = math.floor(
+                    (length[i] + 2 * pad - dilation * (kernel - 1)) / stride + 1
+                )
 
-        def mean_length(length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int):
+        def mean_length(
+            length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int
+        ):
             for i in range(length.size(0)):
-                length[i] = math.floor( (length[i] + 2*pad - kernel)/stride + 1 )
+                length[i] = math.floor((length[i] + 2 * pad - kernel) / stride + 1)
 
-                
         wav = batch["wav"]
         wav_len = batch["wav_len"]
         image = batch["image"]

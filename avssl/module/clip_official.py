@@ -194,7 +194,9 @@ class ClipModel(nn.Module):
         """
         return self.model.encode_image(image)
 
-    def encode_subword_prob(self, result: dict, audio_len: torch.Tensor) -> torch.Tensor:
+    def encode_subword_prob(
+        self, result: dict, audio_len: torch.Tensor
+    ) -> torch.Tensor:
         # start token embd = 49406, end token embd = 49407
         prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 75
@@ -214,13 +216,11 @@ class ClipModel(nn.Module):
         paddings = self.model.token_embedding(paddings)
         weighted_embd = prob @ self.model.token_embedding.weight
 
-        sot_idx, eot_idx = torch.tensor([49406]).unsqueeze(0).to(self.device), torch.tensor([49407]).unsqueeze(0).to(self.device)
-        sot = self.original_text_emb_weight[
-            sot_idx
-        ]
-        eot = self.original_text_emb_weight[
-            eot_idx
-        ]
+        sot_idx, eot_idx = torch.tensor([49406]).unsqueeze(0).to(
+            self.device
+        ), torch.tensor([49407]).unsqueeze(0).to(self.device)
+        sot = self.original_text_emb_weight[sot_idx]
+        eot = self.original_text_emb_weight[eot_idx]
 
         new_idx, new_weighted_embd = [], []
         for len, i, embd in zip(audio_len, idx, weighted_embd):
@@ -230,10 +230,12 @@ class ClipModel(nn.Module):
                 cat_i.append(i[len:])
             if embd[len:].size(0) > 0:
                 cat_embd.append(embd[len:])
-            new_idx.append( torch.cat(cat_i, dim=1) )
-            new_weighted_embd.append( torch.cat(cat_embd, dim=1) )
+            new_idx.append(torch.cat(cat_i, dim=1))
+            new_weighted_embd.append(torch.cat(cat_embd, dim=1))
 
-        idx, weighted_embd = torch.cat(new_idx, dim=0), torch.cat(new_weighted_embd, dim=0)
+        idx, weighted_embd = torch.cat(new_idx, dim=0), torch.cat(
+            new_weighted_embd, dim=0
+        )
         x = torch.cat((weighted_embd, paddings), dim=1)  # [batch_size, n_ctx, d_model]
         x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -264,7 +266,9 @@ class ClipModel(nn.Module):
         """
         return self.model.encode_text(text)
 
-    def encode_subword(self, prob: torch.Tensor, audio_len: torch.Tensor) -> torch.Tensor:
+    def encode_subword(
+        self, prob: torch.Tensor, audio_len: torch.Tensor
+    ) -> torch.Tensor:
         """Encode a batch of subwords.
 
         Args:
