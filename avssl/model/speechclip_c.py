@@ -2,6 +2,7 @@ import logging
 import pickle
 from typing import Tuple, Union
 
+import math
 import numpy as np
 import torch
 from jiwer import cer, wer
@@ -159,6 +160,16 @@ class CascadedSpeechClip(BaseLightningModel):
         batch,
         cal_loss: bool = False,
     ) -> dict:
+
+        def conv1d_length(length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int, dilation: int):
+            for i in range(length.size(0)):
+                length[i] = math.floor( (length[i] + 2*pad - dilation*(kernel-1))/stride + 1 )
+
+        def mean_length(length: Union[torch.Tensor, list], kernel: int, stride: int, pad: int):
+            for i in range(length.size(0)):
+                length[i] = math.floor( (length[i] + 2*pad - kernel)/stride + 1 )
+
+                
         wav = batch["wav"]
         wav_len = batch["wav_len"]
         image = batch["image"]
@@ -168,7 +179,7 @@ class CascadedSpeechClip(BaseLightningModel):
         # update device information to clip model
         self.clip.update_device(self.device)
 
-        audio_feat, _ = self.forward_audio(wav, wav_len)
+        audio_feat, audio_len = self.forward_audio(wav, wav_len)
         image_feat = self.forward_image(image)
         # print(image_feat.shape)
         # # exit(1)
@@ -176,23 +187,18 @@ class CascadedSpeechClip(BaseLightningModel):
         #  down sampling
         audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
         audio_feat = self.downsampling(audio_feat)
-        sot = self.clip.original_text_emb_weight[
-            torch.tensor([49406] * audio_feat.size(0))
-        ]
-        eot = self.clip.original_text_emb_weight[
-            torch.tensor([49047] * audio_feat.size(0))
-        ]
-        audio_feat = torch.cat(
-            [sot.unsqueeze(-1), audio_feat, eot.unsqueeze(-1)], dim=-1
-        )
 
+        # compute audio length
+        conv1d_length(audio_len, 2, 2, 0, 1)
+        mean_length(audio_len, 2, 2, 0)
+        conv1d_length(audio_len, 2, 2, 0, 1)
         # vector quantization
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
 
-        if vq_result["subword_prob"].size(1) > 77:
-            vq_result["subword_prob"] = vq_result["subword_prob"][:, :77, :]
+        if vq_result["subword_prob"].size(1) > 75:
+            vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
 
-        audio_feat = self.clip.encode_subword(vq_result)
+        audio_feat = self.clip.encode_subword(vq_result, audio_len)
 
         if cal_loss:
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
