@@ -1,8 +1,12 @@
+import logging
+import pickle
+
 import clip
+import numpy as np
 import torch
+from clip.simple_tokenizer import SimpleTokenizer
 from PIL import Image
 from torch import nn
-import pickle
 
 _clip_models = {
     "RN50",
@@ -23,6 +27,7 @@ class ClipModel(nn.Module):
         device: str = "cpu",
         image_encoder_trainable: bool = False,
         text_encoder_trainable: bool = False,
+        reduce_subword_embbedding=None,
         **kwargs,
     ):
         """Official CLIP model.
@@ -39,24 +44,54 @@ class ClipModel(nn.Module):
         self.device = device
 
         self.model, self.image_preprocess = clip.load(name, device)
-        
-        if precision == 16:
-            self.model.half()
-        elif precision == 32:
-            self.model.float()
 
         self.image_encoder_trainable = image_encoder_trainable
         self.text_encoder_trainable = text_encoder_trainable
 
         self.out_dim = self.model.transformer.width
-        self.text_embd = self.model.token_embedding
 
-        with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
-            self.token_mapping = pickle.load(fp)
-        ids = torch.tensor( list(self.token_mapping.keys()) ).to(self.device)
-        self.used_text_embd_weight = self.text_embd(ids).detach()
+        self.tokenizer = SimpleTokenizer()
 
         self.freeze_models()
+
+        self.selected_text_emb_ids = None
+        if reduce_subword_embbedding is not None:
+            self.selected_text_emb_ids = np.load(reduce_subword_embbedding)
+            logging.warning(
+                "Reduce text embedding to size of {}".format(
+                    len(self.selected_text_emb_ids)
+                )
+            )
+            # use tensor to save original weights
+            self.original_text_emb_weight = self.model.token_embedding.weight
+            reduced_embedding_weight = self.model.token_embedding.weight[
+                self.selected_text_emb_ids
+            ]
+            # reduced embedding
+            self.model.token_embedding = nn.Embedding.from_pretrained(
+                reduced_embedding_weight
+            )
+            self.original2Reduced = {
+                old_id: _new_id
+                for (_new_id, old_id) in enumerate(self.selected_text_emb_ids)
+            }
+            self.reducedl2Original = {
+                _new_id: old_id
+                for (_new_id, old_id) in enumerate(self.selected_text_emb_ids)
+            }
+            # delete original token embedding to save memory
+            # del self.clip.model.token_embedding
+            # self.clip.model.token_embedding = None
+            # self.original_text_embs_weights = self.clip.model.token_embedding.weight.detach()
+        else:
+            # self.reduced_embedding_weight = None
+            pass
+        #     exit(1)
+
+        # with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
+        #     self.token_mapping = pickle.load(fp)
+        # ids = torch.tensor( list(self.token_mapping.keys()) ).to(self.device)
+        # self.used_text_embd_weight = self.model.token_embedding(ids).detach()
 
     def freeze_models(self):
         """Freeze Models if required"""
@@ -80,6 +115,10 @@ class ClipModel(nn.Module):
 
             self.model.text_projection.requires_grad = False
             self.model.logit_scale.requires_grad = False
+
+    def update_device(self, device):
+        # since it is a pure nn.Module, it won't update itself
+        self.device = device
 
     def prep_image(self, paths: list) -> torch.Tensor:
         """Prepare image tensor
@@ -105,10 +144,26 @@ class ClipModel(nn.Module):
         Returns:
             torch.Tensor: _description_
         """
-        res = clip.tokenize(sents).to(self.device)
-        for sent in res:
-            for token in sent:
-                token = self.token_mapping[token]
+        res = clip.tokenize(sents)
+        if self.selected_text_emb_ids is not None:
+            for sent in res:
+                for i in range(len(sent)):
+                    sent[i] = self.original2Reduced[sent[i]]
+        return res.to(self.device)
+
+    def deTokenize(self, sents):
+        res = []
+        if self.selected_text_emb_ids is not None:
+            for sent in sents:
+                for i in range(len(sent)):
+                    sent[i] = self.reducedl2Original[sent[i]]
+
+                res.append(
+                    self.tokenizer.decode(sent)
+                    .replace("<|startoftext|>", "")
+                    .replace("<|endoftext|>", "")
+                    .strip()
+                )
         return res
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
@@ -129,7 +184,7 @@ class ClipModel(nn.Module):
         prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
         paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
-        paddings = self.text_embd(paddings)
+        # assert paddings.device == self.model.token_embedding.weight.device, "{} {}".format(paddings.device , self.model.token_embedding.weight.device)
 
         # paddings, pad_embd_idx = [], self.token_mapping[0]
         # for i in range( bsz* (max_len - seq_len) ):
@@ -137,7 +192,12 @@ class ClipModel(nn.Module):
         # paddings = torch.stack(paddings, dim=0)
         # paddings = paddings.view(bsz, (max_len - seq_len), -1)
 
-        weighted_embd = prob @ self.used_text_embd_weight
+        # if self.reduced_embedding_weight is not None:
+        #     paddings = paddings @ self.reduced_embedding_weight
+        #     weighted_embd = prob @ self.reduced_embedding_weight
+        # else:
+        paddings = self.model.token_embedding(paddings)
+        weighted_embd = prob @ self.model.token_embedding.weight
 
         x = torch.cat((weighted_embd, paddings), dim=1)  # [batch_size, n_ctx, d_model]
 

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from collections import defaultdict
 from typing import List
 
@@ -74,6 +75,7 @@ class FlickrDataset(BaseDataset):
     def __init__(
         self,
         dataset_root: str,
+        text_file: str,
         modalities: List,
         split: str = "train",
         image_transform=None,
@@ -110,24 +112,48 @@ class FlickrDataset(BaseDataset):
             if name in wav_names:
                 wav_names_to_paths[name].append(os.path.join(wav_base_path, p))
 
-        caption_txt_path = os.path.join(self.dataset_root, "captions.txt")
+        assert text_file in [
+            "captions.txt",
+            "Flickr8k.lemma.token.txt",
+            "Flickr8k.token.txt",
+        ], "Flickr8K text file must be one of them {}".format(
+            ["captions.txt", "Flickr8k.lemma.token.txt", "Flickr8k.token.txt"]
+        )
+        caption_txt_path = os.path.join(self.dataset_root, text_file)
         imageName2captions = {}
-        with open(caption_txt_path, "r") as f:
-            for _l in f.readlines():
-                # skip first line
-                if _l.strip() == "image,caption":
-                    continue
 
-                _imgName, _caption = _l.split(".jpg,")
-                assert isinstance(_imgName, str)
-                assert isinstance(_caption, str)
-                _caption = _caption.lower().strip()
-                if _caption[-1] == ".":
-                    _caption = _caption[:-1]
+        if text_file == "captions.txt":
+            with open(caption_txt_path, "r") as f:
+                for _l in f.readlines():
+                    # skip first line
+                    if _l.strip() == "image,caption":
+                        continue
+
+                    _imgName, _caption = _l.split(".jpg,")
+                    assert isinstance(_imgName, str)
+                    assert isinstance(_caption, str)
+                    _caption = _caption.lower().strip()
+                    if _caption[-1] == ".":
+                        _caption = _caption[:-1]
+                        _caption = _caption.strip()
+                    if _imgName not in imageName2captions:
+                        imageName2captions[_imgName] = []
+                    imageName2captions[_imgName].append(_caption)
+        else:
+            with open(caption_txt_path, "r") as f:
+                for i, _line in enumerate(f.readlines()):
+                    _line = _line.strip()
+                    _out = re.split("#[0-9]", _line)
+                    assert len(_out) == 2, _line
+                    _imgName, _caption = re.split("#[0-9]", _line)
+                    _imgName = _imgName.replace(".jpg", "")
                     _caption = _caption.strip()
-                if _imgName not in imageName2captions:
-                    imageName2captions[_imgName] = []
-                imageName2captions[_imgName].append(_caption)
+                    if _caption[-1] == ".":
+                        _caption = _caption[:-1].strip()
+
+                    if _imgName not in imageName2captions:
+                        imageName2captions[_imgName] = []
+                    imageName2captions[_imgName].append(_caption)
 
         id_pairs_path = os.path.join(self.dataset_root, "Flickr8k_idPairs.json")
         with open(id_pairs_path, "r") as f:

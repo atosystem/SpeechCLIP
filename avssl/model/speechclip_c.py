@@ -1,4 +1,5 @@
 import logging
+import pickle
 from typing import Tuple, Union
 
 import numpy as np
@@ -21,7 +22,6 @@ from avssl.optim import get_scheduler
 
 from .base_model import BaseLightningModel
 
-import pickle
 
 class CascadedSpeechClip(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
@@ -38,13 +38,12 @@ class CascadedSpeechClip(BaseLightningModel):
             )
 
         self.clip = ClipModel(
-            codebook_size=config.vq.num_vars,
-            precision=config.trainer.precision,
             **config.clip,
+            device=self.device,
         )
 
-        self.text_embd_dim = self.clip.text_embd.weight.size(-1)
-        
+        self.text_embd_dim = self.clip.model.token_embedding.weight.size(-1)
+
         self.downsampling = nn.Sequential(
             nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
             nn.AvgPool1d(2, 2, 0),
@@ -62,8 +61,10 @@ class CascadedSpeechClip(BaseLightningModel):
         if config.vq.type == "gumbel":
             assert (len(config.vq.temp) == 3), f"Your temp tuple size is {len(config.vq.temp)}, should be 3."
             self.vector_quantizer = GumbelVectorQuantizer(
-                dim=self.embd_dim,
-                num_vars=config.vq.vars,
+                dim=self.text_embd_dim,
+                num_vars=self.clip.model.token_embedding.weight.size(
+                    0
+                ),  # config.vq.num_vars,
                 temp=config.vq.temp,
                 groups=config.vq.groups,
                 combine_groups=config.vq.combine_groups,
@@ -73,6 +74,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 weight_proj_depth=config.vq.depth,
                 weight_proj_factor=2,
                 # init_codebook=self.text_embd.weight,
+                init_codebook=0,  # no codebook needed
             )
         elif config.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -161,8 +163,13 @@ class CascadedSpeechClip(BaseLightningModel):
         id = batch["id"]
         id = torch.cat(id, dim=0)
 
-        audio_feat, audio_feat_len = self.forward_audio(wav, wav_len)
+        # update device information to clip model
+        self.clip.update_device(self.device)
+
+        audio_feat, _ = self.forward_audio(wav, wav_len)
         image_feat = self.forward_image(image)
+        # print(image_feat.shape)
+        # # exit(1)
 
         #  down sampling
         audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
@@ -219,19 +226,47 @@ class CascadedSpeechClip(BaseLightningModel):
 
         result = {"val_loss": loss}
         for key in res.keys():
+            if isinstance(res[key], torch.Tensor):
+                res[key] = res[key].detach().cpu()
             if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
                 result[key] = res[key]
 
-        self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(
+            result,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+        # print("id.shape",id.shape)
+        # print("id",id)
+        # print()
         return {
             "id": id,
             "audio_feat": audio_feat,
             "image_feat": image_feat,
         }
 
-    # def log_grad_norm(self, grad_norm_dict):
-    #     print(grad_norm_dict)
-    #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
+    # def validation_step_end(self, batch_parts):
+    # #     # predictions from each GPU
+    #     ids = batch_parts["image_feat"]
+    #     print("ids_end",ids)
+    #     exit(1)
+    # #     exit(1)
+    # #     audio_feats = batch_parts["audio_feat"]
+    # #     image_feats = batch_parts["image_feat"]
+
+    # #     print("asd")
+    # #     print(ids)
+    # #     exit(1)
+
+    # #     # do something with both outputs
+    # #     return 2
+
+    # # def log_grad_norm(self, grad_norm_dict):
+    # #     print(grad_norm_dict)
+    # #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
     def validation_epoch_end(self, outputs):
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
