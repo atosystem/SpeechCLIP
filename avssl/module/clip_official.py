@@ -90,6 +90,7 @@ class ClipModel(nn.Module):
             self.startOfTxt_reduced = self.original2Reduced[
                 self.tokenizer.encoder["<|startoftext|>"]
             ]
+
             self.endOfTxt_reduced = self.original2Reduced[
                 self.tokenizer.encoder["<|endoftext|>"]
             ]
@@ -200,7 +201,10 @@ class ClipModel(nn.Module):
         # start token embd = 49406, end token embd = 49407
         prob, idx = result["subword_prob"], result["targets"].squeeze(-1)
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 75
-        paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
+        paddings = None
+        if max_len - seq_len > 0:
+            paddings = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
+            paddings = self.model.token_embedding(paddings)
         # assert paddings.device == self.model.token_embedding.weight.device, "{} {}".format(paddings.device , self.model.token_embedding.weight.device)
 
         # paddings, pad_embd_idx = [], self.token_mapping[0]
@@ -213,14 +217,13 @@ class ClipModel(nn.Module):
         #     paddings = paddings @ self.reduced_embedding_weight
         #     weighted_embd = prob @ self.reduced_embedding_weight
         # else:
-        paddings = self.model.token_embedding(paddings)
+
         weighted_embd = prob @ self.model.token_embedding.weight
 
-        sot_idx, eot_idx = torch.tensor([49406]).unsqueeze(0).to(
-            self.device
-        ), torch.tensor([49407]).unsqueeze(0).to(self.device)
-        sot = self.original_text_emb_weight[sot_idx]
-        eot = self.original_text_emb_weight[eot_idx]
+        sot_idx = torch.tensor([self.startOfTxt_reduced]).unsqueeze(0).to(self.device)
+        eot_idx = torch.tensor([self.endOfTxt_reduced]).unsqueeze(0).to(self.device)
+        sot = self.model.token_embedding(sot_idx)
+        eot = self.model.token_embedding(eot_idx)
 
         new_idx, new_weighted_embd = [], []
         for len, i, embd in zip(audio_len, idx, weighted_embd):
@@ -233,10 +236,11 @@ class ClipModel(nn.Module):
             new_idx.append(torch.cat(cat_i, dim=1))
             new_weighted_embd.append(torch.cat(cat_embd, dim=1))
 
-        idx, weighted_embd = torch.cat(new_idx, dim=0), torch.cat(
-            new_weighted_embd, dim=0
-        )
-        x = torch.cat((weighted_embd, paddings), dim=1)  # [batch_size, n_ctx, d_model]
+        idx = torch.cat(new_idx, dim=0)
+        weighted_embd = torch.cat(new_weighted_embd, dim=0)
+        x = weighted_embd  # [batch_size, n_ctx, d_model]
+        if paddings is not None:
+            x = torch.cat((x, paddings), dim=1)
         x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.model.transformer(x)
@@ -253,7 +257,6 @@ class ClipModel(nn.Module):
             ]
             @ self.model.text_projection
         )
-
         # x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
         return x
 
