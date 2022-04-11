@@ -200,12 +200,12 @@ class CascadedSpeechClip(BaseLightningModel):
         conv1d_length(audio_len, 2, 2, 0, 1)
         mean_length(audio_len, 2, 2, 0)
         conv1d_length(audio_len, 2, 2, 0, 1)
-        
+
         # vector quantization
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
 
-        if vq_result["subword_prob"].size(1) > 75:
-            vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
+        # if vq_result["subword_prob"].size(1) > 75:
+        #     vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
 
         audio_feat = self.clip.encode_subword(vq_result, audio_len)
 
