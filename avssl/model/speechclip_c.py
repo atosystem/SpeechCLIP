@@ -176,6 +176,15 @@ class CascadedSpeechClip(BaseLightningModel):
         #  down sampling
         audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
         audio_feat = self.downsampling(audio_feat)
+        sot = self.clip.original_text_emb_weight[
+            torch.tensor([49406] * audio_feat.size(0))
+        ]
+        eot = self.clip.original_text_emb_weight[
+            torch.tensor([49047] * audio_feat.size(0))
+        ]
+        audio_feat = torch.cat(
+            [sot.unsqueeze(-1), audio_feat, eot.unsqueeze(-1)], dim=-1
+        )
 
         # vector quantization
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
