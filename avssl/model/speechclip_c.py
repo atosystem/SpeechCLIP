@@ -200,6 +200,7 @@ class CascadedSpeechClip(BaseLightningModel):
         conv1d_length(audio_len, 2, 2, 0, 1)
         mean_length(audio_len, 2, 2, 0)
         conv1d_length(audio_len, 2, 2, 0, 1)
+        
         # vector quantization
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
 
