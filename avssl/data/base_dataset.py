@@ -1,6 +1,7 @@
 # Ref: https://github.com/wnhsu/ResDAVEnet-VQ/blob/master/dataloaders/image_caption_dataset.py
 # Author: David Harwath, Wei-Ning Hsu
 
+import pickle
 from typing import List, Union
 
 import clip
@@ -8,7 +9,7 @@ import librosa
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-import pickle
+
 
 class BaseImageCaptionDataset(Dataset):
     def __init__(
@@ -36,7 +37,7 @@ class BaseImageCaptionDataset(Dataset):
 
         self.data = []
 
-        with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
+        with open("./avssl/data/flickr_stat/token_mapping.p", "rb") as fp:
             self.token_mapping = pickle.load(fp)
 
     def _LoadAudio(self, path: str):

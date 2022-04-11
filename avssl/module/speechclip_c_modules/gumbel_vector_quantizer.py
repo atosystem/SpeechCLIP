@@ -40,9 +40,6 @@ class GumbelVectorQuantizer(nn.Module):
                                 projections by this factor
         """
         super().__init__()
-        if init_codebook is not None:
-            vq_dim = init_codebook.size(-1)
-            num_vars = init_codebook.size(0)
 
         self.groups = groups
         self.combine_groups = combine_groups
@@ -58,10 +55,16 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            init_codebook = init_codebook.view(
-                1, num_groups * num_vars, var_dim
-            ).detach()
-            self.vars = init_codebook
+            if init_codebook == 0:
+                # no codebook needed
+                self.vars = None
+            else:
+                # init self.vars with init_codebook
+                vq_dim = init_codebook.size(-1)
+                num_vars = init_codebook.size(0)
+                self.vars = nn.Parameter(
+                    init_codebook.view(1, num_groups * num_vars, var_dim)
+                )
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)
@@ -208,10 +211,7 @@ class GumbelVectorQuantizer(nn.Module):
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
-        vars = self.vars
-        if self.combine_groups:
-            # codebook groups shared same set of parameters
-            vars = vars.repeat(1, self.groups, 1)
+        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
 
         if produce_targets:
             result["targets"] = (
@@ -221,15 +221,22 @@ class GumbelVectorQuantizer(nn.Module):
                 .detach()
             )
 
-        x = x.unsqueeze(-1) * vars
-        x = x.view(bsz * tsz, self.groups, self.num_vars, -1)
-        x = x.sum(-2).type_as(x)
-        x = x.view(bsz, tsz, -1)
+        vars = self.vars
+        if vars is not None:
+            # calculate the folloing only if codebook exist
+            if self.combine_groups:
+                # codebook groups shared same set of parameters
+                vars = vars.repeat(1, self.groups, 1)
 
-        if not self.time_first:
-            x = x.transpose(1, 2)  # BTC -> BCT
+            x = x.unsqueeze(-1) * vars
+            # print(x.dtype)
+            x = x.view(bsz * tsz, self.groups, self.num_vars, -1)
+            x = x.sum(-2).type_as(x)
+            x = x.view(bsz, tsz, -1)
 
-        result["x"] = x
-        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
+            if not self.time_first:
+                x = x.transpose(1, 2)  # BTC -> BCT
+
+            result["x"] = x
 
         return result

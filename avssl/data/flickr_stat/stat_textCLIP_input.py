@@ -9,8 +9,9 @@ import tqdm
 
 DATASET_DIR = "/work/vjsalt22/dataset/flickr"
 
-TXT_FILE = "Flickr8k.lemma.token.txt"
-TXT_FILE = "captions.txt"
+# TXT_FILE = "Flickr8k.lemma.token.txt"
+TXT_FILE = "Flickr8k.token.txt"
+# TXT_FILE = "captions.txt"
 
 
 with open(os.path.join(DATASET_DIR, TXT_FILE), "r") as f:
@@ -18,9 +19,9 @@ with open(os.path.join(DATASET_DIR, TXT_FILE), "r") as f:
 
 captions = []
 for i, _line in enumerate(tqdm.tqdm(_data)):
-    if i == 0:
-        continue
     _line = _line.strip()
+    if i == "image,caption":
+        continue
     _out = re.split("#[0-9]", _line)
     assert len(_out) == 2, _line
     _imgID, _caption = re.split("#[0-9]", _line)
@@ -54,10 +55,20 @@ np.savetxt(
 np.save(
     "text_clip_vocab_usage_byfreq.npy", result_arr[result_arr[:, 1].argsort()[::-1]]
 )
+
+np.save(
+    "flickr_token_selected_idx_byfreq.npy",
+    result_arr[result_arr[:, 1].argsort()[::-1]][:, 0],
+)
+
+# print(result_arr[result_arr[:, 1].argsort()[::-1]][:,0])
+# exit(1)
+
 # print()
 # print("Sort by index")
 # print(result_arr[result_arr[:, 0].argsort()])
 np.savetxt("text_clip_vocab_usage_byID.txt", result_arr[result_arr[:, 0].argsort()])
 np.save("text_clip_vocab_usage_byID.npy", result_arr[result_arr[:, 0].argsort()])
+
 
 print(result_arr.shape)

@@ -89,7 +89,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         seed_everything(self.args.seed)
 
         if self.args.ckpt != "":
-            model = model_cls.load_from_checkpoint(self.args.ckpt).to(self.args.device)
+            model = model_cls.load_from_checkpoint(self.args.ckpt)
             if self.args.save_path != "":
                 model.config.save_path = self.args.save_path
             config = model.config
@@ -97,7 +97,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             self.args.ckpt = None
             config = yaml.load(open(self.args.config, "r"), Loader=yaml.FullLoader)
             config = OrderedNamespace([self.args, config])
-            model = model_cls(config).to(config.device)
+            model = model_cls(config)
         self.config = config
 
         if config.data.dataset.name == "flickr":

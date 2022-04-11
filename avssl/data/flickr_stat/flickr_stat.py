@@ -1,5 +1,6 @@
-import numpy as np
 import pickle
+
+import numpy as np
 
 freq_usage = np.load("./text_clip_vocab_usage_byfreq.npy")
 ID_usage = np.load("./text_clip_vocab_usage_byID.npy")
@@ -18,9 +19,9 @@ for i, row in enumerate(ID_usage):
         print(freq)
 
 # write
-with open('token_mapping.p', 'wb') as fp:
+with open("token_mapping.p", "wb") as fp:
     pickle.dump(res, fp)
 
 # read
-with open('token_mapping.p', 'rb') as fp:
+with open("token_mapping.p", "rb") as fp:
     data = pickle.load(fp)
