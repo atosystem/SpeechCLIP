@@ -4,7 +4,9 @@ from typing import Tuple, Union
 
 import numpy as np
 import torch
+from jiwer import cer, wer
 from torch import nn
+from torch.nn import functional as F
 
 from avssl.base import OrderedNamespace
 from avssl.module import (
@@ -187,6 +189,10 @@ class CascadedSpeechClip(BaseLightningModel):
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
 
+            assert audio_feat.shape == image_feat.shape
+
+            assert audio_feat.shape[0] == id.shape[0]
+
             cl_loss = self.criterion(
                 features=torch.stack([audio_feat, image_feat], dim=1),
                 labels=id,
@@ -231,6 +237,18 @@ class CascadedSpeechClip(BaseLightningModel):
             if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
                 result[key] = res[key]
 
+        detok_targets = self.clip.deTokenize(res["targets"])
+
+        wer_score = wer(batch["text"], detok_targets)
+        cer_score = cer(batch["text"], detok_targets)
+
+        result.update(
+            {
+                "val_wer": wer_score,
+                "val_cer": cer_score,
+            }
+        )
+
         self.log_dict(
             result,
             on_step=True,
@@ -239,13 +257,12 @@ class CascadedSpeechClip(BaseLightningModel):
             logger=True,
             sync_dist=True,
         )
-        # print("id.shape",id.shape)
-        # print("id",id)
-        # print()
+
         return {
             "id": id,
             "audio_feat": audio_feat,
             "image_feat": image_feat,
+            "vq_targets": res["targets"].squeeze(),
         }
 
     # def validation_step_end(self, batch_parts):
@@ -303,6 +320,31 @@ class CascadedSpeechClip(BaseLightningModel):
             AI_answers=AI_answers,
             IA_answers=IA_answers,
         )
+
+        # calculate KL between vq targets and ground truth dist.
+        all_targets = torch.cat([x["vq_targets"].flatten() for x in outputs], dim=0)
+        all_targets = all_targets.flatten()
+        all_targets = all_targets.long()
+        vq_dist = torch.bincount(all_targets)
+        del all_targets
+        if len(vq_dist) < len(self.clip.selected_text_emb_ids_dist):
+            vq_dist = torch.cat(
+                [
+                    vq_dist,
+                    torch.zeros(
+                        len(self.clip.selected_text_emb_ids_dist) - len(vq_dist)
+                    ),
+                ]
+            )
+        codebook_usage = torch.sum(vq_dist > 0) / len(vq_dist)
+        # smooth the prob. of vq_dist to calculate KL
+        vq_dist = vq_dist + 1e-10
+        vq_dist = vq_dist / vq_dist.sum()
+        target_KL = F.kl_div(
+            torch.log(vq_dist), self.clip.selected_text_emb_ids_dist, reduction="sum"
+        )
+        self.log("val_target_KL", target_KL)
+        self.log("val_codebook_usage", codebook_usage)
 
     def configure_optimizers(self):
         optimizers = []

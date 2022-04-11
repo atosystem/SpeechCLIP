@@ -105,6 +105,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                 tr_set = FlickrDataset(
                     split="train",
                     load_image=False,
+                    tokenizeText=False,
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
@@ -112,6 +113,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                 dv_set = FlickrDataset(
                     split="dev",
                     load_image=False,
+                    tokenizeText=False,
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
@@ -119,6 +121,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                 test_set = FlickrDataset(
                     split="test",
                     load_image=False,
+                    tokenizeText=False,
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )

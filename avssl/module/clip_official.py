@@ -56,7 +56,14 @@ class ClipModel(nn.Module):
 
         self.selected_text_emb_ids = None
         if reduce_subword_embbedding is not None:
-            self.selected_text_emb_ids = np.load(reduce_subword_embbedding)
+            _data = np.load(reduce_subword_embbedding)
+            self.selected_text_emb_ids = _data[:, 0]
+            self.selected_text_emb_ids_dist = _data[:, 1]
+            self.selected_text_emb_ids_dist = torch.from_numpy(
+                self.selected_text_emb_ids_dist
+                / np.sum(self.selected_text_emb_ids_dist)
+            )
+            del _data
             logging.warning(
                 "Reduce text embedding to size of {}".format(
                     len(self.selected_text_emb_ids)
@@ -79,6 +86,14 @@ class ClipModel(nn.Module):
                 _new_id: old_id
                 for (_new_id, old_id) in enumerate(self.selected_text_emb_ids)
             }
+
+            self.startOfTxt_reduced = self.original2Reduced[
+                self.tokenizer.encoder["<|startoftext|>"]
+            ]
+            self.endOfTxt_reduced = self.original2Reduced[
+                self.tokenizer.encoder["<|endoftext|>"]
+            ]
+
             # delete original token embedding to save memory
             # del self.clip.model.token_embedding
             # self.clip.model.token_embedding = None
@@ -152,6 +167,8 @@ class ClipModel(nn.Module):
         return res.to(self.device)
 
     def deTokenize(self, sents):
+        if isinstance(sents, torch.Tensor):
+            sents = sents.squeeze().tolist()
         res = []
         if self.selected_text_emb_ids is not None:
             for sent in sents:
@@ -207,7 +224,16 @@ class ClipModel(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
+
+        x = (
+            x[
+                torch.arange(x.shape[0]),
+                torch.argmax((idx == self.endOfTxt_reduced).long(), dim=-1),
+            ]
+            @ self.model.text_projection
+        )
+
+        # x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
         return x
 
     def encode_text(self, text: torch.Tensor) -> torch.Tensor:

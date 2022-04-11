@@ -19,7 +19,7 @@ clip:
   name: ViT-B/32
   image_encoder_trainable: false
   text_encoder_trainable: false
-  reduce_subword_embbedding: ./avssl/data/flickr_stat/flickr_token_selected_idx_byfreq.npy # npy file for the selected embedding ID
+  reduce_subword_embbedding: ./avssl/data/flickr_stat/text_clip_vocab_usage_byfreq.npy # npy file for the selected embedding ID and its frequency
 
 audio_encoder:
   type: s3prl
@@ -63,5 +63,5 @@ trainer:
   default_root_dir: exp/sc_c_tmp
   num_sanity_val_steps: 0
   # accelerator: dp
-  limit_train_batches: 2
-  # limit_val_batches: 4
+  # limit_train_batches: 1
+  # limit_val_batches: 16
