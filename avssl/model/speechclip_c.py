@@ -280,6 +280,11 @@ class CascadedSpeechClip(BaseLightningModel):
             del downsampling_out
             audio_feat = audio_feat.permute(0, 2, 1)
 
+        # compute audio length
+        conv1d_length(audio_len, 2, 2, 0, 1)
+        mean_length(audio_len, 2, 2, 0)
+        conv1d_length(audio_len, 2, 2, 0, 1)
+        
         # vector quantization
         if self.vq_type == "gumbel":
             self.vector_quantizer.set_num_updates(self.global_step)
