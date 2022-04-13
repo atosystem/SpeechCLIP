@@ -1,5 +1,6 @@
 import logging
 import pickle
+import string
 
 import clip
 import numpy as np
@@ -196,7 +197,7 @@ class ClipModel(nn.Module):
         return self.model.encode_image(image)
 
     def encode_subword_prob(
-        self, result: dict, audio_len: torch.Tensor
+        self, result: dict, audio_len: torch.Tensor, vq_type: string
     ) -> torch.Tensor:
         # start token embd = 49406, end token embd = 49407
         prob, token_idx = result["subword_prob"], result["targets"].squeeze(-1)
@@ -215,7 +216,11 @@ class ClipModel(nn.Module):
         sot_emb = self.model.token_embedding(sot_idx)
         eot_emb = self.model.token_embedding(eot_idx)
 
-        weighted_subword_embd = prob @ self.model.token_embedding.weight
+        assert vq_type in ["kmeans", "gumbel"], "Not implemented vq type"
+        if vq_type == "kmeans":
+            weighted_subword_embd = self.model.token_embedding(token_idx)
+        else: 
+            weighted_subword_embd = prob @ self.model.token_embedding.weight
 
         # prepend sot token in the front
         token_idx = torch.cat([sot_idx.unsqueeze(0).repeat(bsz, 1), token_idx], dim=1)
@@ -309,7 +314,7 @@ class ClipModel(nn.Module):
         return self.model.encode_text(text)
 
     def encode_subword(
-        self, prob: torch.Tensor, audio_len: torch.Tensor
+        self, prob: torch.Tensor, audio_len: torch.Tensor, vq_type: string
     ) -> torch.Tensor:
         """Encode a batch of subwords.
 
@@ -319,7 +324,7 @@ class ClipModel(nn.Module):
         Returns:
             torch.Tensor: Text features. (B, D)
         """
-        return self.encode_subword_prob(prob, audio_len)
+        return self.encode_subword_prob(prob, audio_len, vq_type)
 
     def get_scores(self, image: torch.Tensor, text: torch.Tensor) -> tuple:
         """Get logit scores between the images and text sentences.

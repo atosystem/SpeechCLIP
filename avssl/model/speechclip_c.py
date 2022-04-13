@@ -90,7 +90,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 gamma=config.vq.gamma,
-                init_codebook=self.clip.used_text_embd_weight,
+                init_codebook=self.clip.model.token_embedding.weight.to(config.device),
             )
         else:
             assert (
@@ -220,7 +220,7 @@ class CascadedSpeechClip(BaseLightningModel):
         # if vq_result["subword_prob"].size(1) > 75:
         #     vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
 
-        audio_feat = self.clip.encode_subword(vq_result, audio_len)
+        audio_feat = self.clip.encode_subword(vq_result, audio_len, self.vq_type)
         if cal_loss:
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
             image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)

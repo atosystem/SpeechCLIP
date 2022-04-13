@@ -141,8 +141,9 @@ class KmeansVectorQuantizer(nn.Module):
 
         ze = ze.float()
         zq = zq.float()
-        latent_loss = self.mse_mean(zq, ze.detach())
+        # latent_loss = self.mse_mean(zq, ze.detach())
         commitment_loss = self.mse_mean(ze, zq.detach())
 
-        result["loss"] = latent_loss + self.gamma * commitment_loss
+        # result["loss"] = latent_loss + self.gamma * commitment_loss
+        result["loss"] = self.gamma * commitment_loss
         return result
