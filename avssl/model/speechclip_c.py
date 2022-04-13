@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import os
 import pickle
 from typing import Tuple, Union
 
@@ -323,7 +324,7 @@ class CascadedSpeechClip(BaseLightningModel):
 
         result = {}
         for key in res.keys():
-            if key in ["code_perplexity", "prob_perplexity", "temp"]:
+            if key in ["code_cpx", "prob_cpx", "temp"]:
                 result["train_{}".format(key)] = res[key]
 
         self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -354,7 +355,7 @@ class CascadedSpeechClip(BaseLightningModel):
         for key in res.keys():
             if isinstance(res[key], torch.Tensor):
                 res[key] = res[key].detach().cpu()
-            if key in ["code_perplexity", "prob_perplexity", "temp"]:
+            if key in ["code_cpx", "prob_cpx", "temp"]:
                 result["val_{}".format(key)] = res[key]
 
         detok_text = self.clip.deTokenize(res["targets"])
@@ -393,22 +394,26 @@ class CascadedSpeechClip(BaseLightningModel):
                 os.makedirs(
                     os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
                 )
-            retokenizeText_output = []
-
-            for x in outputs:
-                for _g, _d in zip(x["gold_text"], x["detok_text"]):
-                    retokenizeText_output.append({"gold": _g, "detok": _d})
-
-            with open(
-                os.path.join(
-                    self.logger.log_dir,
-                    "retokenizeText/",
-                    "ep{}.json".format(self.current_epoch),
-                ),
-                "w",
-            ) as f:
-                json.dump(retokenizeText_output, f)
-            del retokenizeText_output
+        retokenizeText_output = []
+        # for enumerate()
+        print("asd")
+        for x in outputs:
+            for _g, _d in zip(x["gold_text"], x["detok_text"]):
+                retokenizeText_output.append({"gold": _g, "detok": _d})
+        with open(
+            os.path.join(
+                self.logger.log_dir,
+                "retokenizeText/",
+                "ep{}.json".format(self.current_epoch),
+            ),
+            "w",
+        ) as f:
+            json.dump(retokenizeText_output, f)
+        del retokenizeText_output
+        # print([x["detok_text"] for x in outputs])
+        # exit(1)
+        if self.log_detokenize_results:
+            os.path.join(self.logger.log_dir, "retokenizeText/", "vq_retokenize.txt")
 
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
