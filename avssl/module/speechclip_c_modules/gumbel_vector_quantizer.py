@@ -223,7 +223,7 @@ class GumbelVectorQuantizer(nn.Module):
 
         vars = self.vars
         if vars is not None:
-            # calculate the folloing only if codebook exist
+            # calculate the following only if codebook exists
             if self.combine_groups:
                 # codebook groups shared same set of parameters
                 vars = vars.repeat(1, self.groups, 1)

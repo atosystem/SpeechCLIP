@@ -1,5 +1,7 @@
+import json
 import logging
 import math
+import os
 import pickle
 from typing import Tuple, Union
 
@@ -106,6 +108,11 @@ class CascadedSpeechClip(BaseLightningModel):
             contrast_mode=config.cl_loss.contrast_mode,
             base_temperature=config.cl_loss.base_temperature,
         )
+
+        self.log_detokenize_results = True
+        if hasattr(config, "log_setting"):
+            if hasattr(config.log_setting, "log_detokenize_results"):
+                self.log_detokenize_results = config.log_setting.log_detokenize_results
 
     def forward_audio(
         self,
@@ -237,8 +244,8 @@ class CascadedSpeechClip(BaseLightningModel):
 
         result = {}
         for key in res.keys():
-            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
-                result[key] = res[key]
+            if key in ["code_cpx", "prob_cpx", "temp"]:
+                result["train_{}".format(key)] = res[key]
 
         self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
@@ -262,13 +269,13 @@ class CascadedSpeechClip(BaseLightningModel):
         for key in res.keys():
             if isinstance(res[key], torch.Tensor):
                 res[key] = res[key].detach().cpu()
-            if (key == "code_cpx") | (key == "prob_cpx") | (key == "temp"):
-                result[key] = res[key]
+            if key in ["code_cpx", "prob_cpx", "temp"]:
+                result["val_{}".format(key)] = res[key]
 
-        detok_targets = self.clip.deTokenize(res["targets"])
+        detok_text = self.clip.deTokenize(res["targets"])
 
-        wer_score = wer(batch["text"], detok_targets)
-        cer_score = cer(batch["text"], detok_targets)
+        wer_score = wer(batch["text"], detok_text)
+        cer_score = cer(batch["text"], detok_text)
 
         result.update(
             {
@@ -291,6 +298,8 @@ class CascadedSpeechClip(BaseLightningModel):
             "audio_feat": audio_feat,
             "image_feat": image_feat,
             "vq_targets": res["targets"].squeeze(),
+            "gold_text": batch["text"],
+            "detok_text": detok_text,
         }
 
     # def validation_step_end(self, batch_parts):
@@ -314,6 +323,32 @@ class CascadedSpeechClip(BaseLightningModel):
     # #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
     def validation_epoch_end(self, outputs):
+        if self.log_detokenize_results:
+            if not os.path.exists(os.path.join(self.logger.log_dir, "retokenizeText")):
+                os.makedirs(
+                    os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
+                )
+        retokenizeText_output = []
+        # for enumerate()
+        print("asd")
+        for x in outputs:
+            for _g, _d in zip(x["gold_text"], x["detok_text"]):
+                retokenizeText_output.append({"gold": _g, "detok": _d})
+        with open(
+            os.path.join(
+                self.logger.log_dir,
+                "retokenizeText/",
+                "ep{}.json".format(self.current_epoch),
+            ),
+            "w",
+        ) as f:
+            json.dump(retokenizeText_output, f)
+        del retokenizeText_output
+        # print([x["detok_text"] for x in outputs])
+        # exit(1)
+        if self.log_detokenize_results:
+            os.path.join(self.logger.log_dir, "retokenizeText/", "vq_retokenize.txt")
+
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
         id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_imgs)}
