@@ -56,16 +56,18 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            # if init_codebook == 0:
-            #     # no codebook needed
-            #     self.vars = None
-            # else:
-            # init self.vars with init_codebook
-            vq_dim = init_codebook.size(-1)
-            num_vars = init_codebook.size(0)
-            self.vars = nn.Parameter(
-                init_codebook.view(1, num_groups * num_vars, var_dim)
-            )
+            if isinstance(init_codebook, torch.Tensor):
+                # init self.vars with init_codebook
+                vq_dim = init_codebook.size(-1)
+                num_vars = init_codebook.size(0)
+                self.vars = nn.Parameter(
+                    init_codebook.view(1, num_groups * num_vars, var_dim)
+                )
+            elif init_codebook == 0:
+                # no codebook needed
+                self.vars = None
+            else:
+                raise NotImplementedError()
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)

@@ -1,3 +1,5 @@
+from turtle import forward
+
 import numpy
 import torch
 from torch import nn
@@ -73,38 +75,26 @@ class CIF(nn.Module):
         alphas = self.weight_network(encoder_outputs)
         assert alphas.shape == (bsz, seq_len, 1), alphas.shape
 
-        if encoder_lens is not None:
-            enc_output_msk = (
-                torch.arange(seq_len)[None, :].to(device)
-                < encoder_lens.view(bsz, 1)[:, None]
-            ).squeeze()
-        else:
-            enc_output_msk = torch.ones((bsz, seq_len)).to(device)
+        if self.training:
+            # training
+            if target_length is not None and self.scaling_stragety:
+                # scaling strategy
+                assert target_length.shape[0] == bsz
+                target_length = target_length.view(bsz, 1)
+                # alphas = encoder_lens.view(bsz,1).repeat(1,seq_len) * alphas
+                alphas = (
+                    alphas
+                    / torch.sum(alphas.view(bsz, seq_len), dim=-1, keepdim=True)
+                    * target_length
+                )
 
         if self.cal_quantity_loss:
             assert (
                 target_length is not None
             ), "target_length cannot be None to calculate quantity_loss"
             quantity_loss = self.quantity_loss_criteria(
-                torch.sum(alphas.view(bsz, seq_len) * enc_output_msk, dim=-1),
-                target_length,
+                torch.sum(alphas.view(bsz, seq_len), dim=-1), target_length
             )
-
-        if self.training:
-            # training
-            if target_length is not None and self.scaling_stragety:
-                # scaling strategy
-                assert target_length.shape[0] == bsz
-
-                alphas = alphas.view(bsz, seq_len)
-                assert alphas.shape == enc_output_msk.shape
-
-                alphas = (
-                    alphas
-                    / torch.sum(alphas * enc_output_msk, dim=-1, keepdim=True)
-                    * target_length.view(bsz, 1)
-                )
-                alphas = alphas.view(bsz, seq_len, 1)
 
         output_c = []
         max_c_len = 0
@@ -153,9 +143,7 @@ class CIF(nn.Module):
                 # add additional firing if residual weight > 0.5
                 if alpha_accum[-1] > 0.5:
                     c.append(h_accum[-1])
-            # handle empty c
-            if len(c) == 0:
-                c = [h_accum[-1]]
+
             c = torch.stack(c)
             max_c_len = max(max_c_len, c.shape[0])
             output_c.append(c)
@@ -200,52 +188,24 @@ if __name__ == "__main__":
     cif = CIF(
         audio_feat_dim=512,
         beta=1.0,
-        scaling_stragety=True,
+        scaling_stragety=False,
         cal_quantity_loss=True,
-        tail_handling=True,
+        tail_handling=False,
     )
-    opt = torch.optim.SGD(cif.parameters(), lr=0.1)
 
     audio_input = torch.randn(bsz, seq_len, audio_dim)
-    audio_input_lens = torch.randint(4, seq_len, (bsz,))
+    audio_input_lens = torch.randint(1, seq_len, (bsz,))
 
     audio_input = audio_input.cuda()
     audio_input_lens = audio_input_lens.cuda()
-    # print(audio_input_lens)
-    for i in range(10):
+    cif = cif.cuda()
 
-        cif = cif.cuda()
+    output_c, q_loss = cif(
+        encoder_outputs=audio_input, encoder_lens=None, target_length=audio_input_lens
+    )
 
-        opt.zero_grad()
-        output_c, audio_input_lens1, q_loss = cif(
-            encoder_outputs=audio_input,
-            encoder_lens=None,
-            target_length=audio_input_lens - 2,
-        )
+    q_loss.backward()
 
-        q_loss.backward()
-        opt.step()
-
-        print("step", i, q_loss.item())
-    for x, l, gl in zip(output_c, audio_input_lens1, audio_input_lens):
-        print("predict_len,gold_len", l.item(), gl.item())
-
-    # inference
-    cif.eval()
-
-    with torch.no_grad():
-        audio_input = torch.randn(bsz, seq_len, audio_dim)
-        audio_input_lens = torch.randint(4, seq_len, (bsz,))
-
-        audio_input = audio_input.cuda()
-        audio_input_lens = audio_input_lens.cuda()
-        output_c, audio_input_lens, q_loss = cif(
-            encoder_outputs=audio_input,
-            encoder_lens=None,
-            target_length=audio_input_lens - 2,
-        )
-
-    print("Inference")
     print(q_loss)
-    for x, l in zip(output_c, audio_input_lens):
-        print(x.shape, l)
+    for x in output_c:
+        print(x.shape)

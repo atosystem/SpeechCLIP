@@ -51,11 +51,41 @@ class CascadedSpeechClip(BaseLightningModel):
 
         self.text_embd_dim = self.clip.model.token_embedding.weight.size(-1)
 
-        self.downsampling = nn.Sequential(
-            nn.Conv1d(self.embd_dim, self.embd_dim, 2, 5, 0, 1),
-            nn.AvgPool1d(2, 2, 0),
-            nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
-        )
+        if hasattr(config, "downsampling"):
+            self.downsampling_type = config.downsampling.type
+        else:
+            self.downsampling_type = "cnn"
+
+        # self.downsampling = nn.Sequential(
+        #     nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
+        #     nn.AvgPool1d(2, 2, 0),
+        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
+        # )
+
+        # filter 1
+        # self.downsampling = nn.Sequential(
+        #     nn.Conv1d(self.embd_dim, self.embd_dim, 5, 5, 0, 1),
+        #     nn.AvgPool1d(2, 2, 0),
+        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
+        # )
+        if self.downsampling_type == "cnn":
+            # filter 2
+            self.downsampling = nn.Sequential(
+                nn.Conv1d(self.embd_dim, self.embd_dim, 10, 5, 0, 1),
+                nn.AvgPool1d(2, 2, 0),
+                nn.Conv1d(self.embd_dim, self.text_embd_dim, 4, 2, 0, 1),
+            )
+        elif self.downsampling_type == "cif":
+            self.downsampling = CIF(
+                audio_feat_dim=self.embd_dim,
+                beta=config.downsampling.cif.beta,
+                scaling_stragety=config.downsampling.cif.scaling_stragety,
+                cal_quantity_loss=config.downsampling.cif.cal_quantity_loss,
+                tail_handling=config.downsampling.cif.tail_handling,
+            )
+            self.cif_lamda_c = config.downsampling.cif.lamda_c
+        else:
+            raise NotImplementedError()
 
         self.vector_quantizer = None
         self.vq_type = config.vq.type
@@ -82,8 +112,8 @@ class CascadedSpeechClip(BaseLightningModel):
                 time_first=False,
                 activation=activation,
                 weight_proj_factor=2,
-                init_codebook=self.clip.model.token_embedding.weight.to(config.device),
-                # init_codebook=0,  # no codebook needed
+                # init_codebook=self.clip.model.token_embedding.weight.to(config.device),
+                init_codebook=0,  # no codebook needed
             )
         elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -96,7 +126,7 @@ class CascadedSpeechClip(BaseLightningModel):
                 vq_dim=config.vq.vq_dim if config.vq.vq_dim > 0 else self.text_embd_dim,
                 time_first=False,
                 gamma=config.vq.gamma,
-                init_codebook=self.clip.model.token_embedding.weight.to(config.device),
+                init_codebook=self.clip.model.token_embedding,
             )
         else:
             assert (
@@ -237,7 +267,7 @@ class CascadedSpeechClip(BaseLightningModel):
             text_toks_len = []
             for t in text_toks:
                 _x = t.index(self.clip.endOfTxt_reduced)
-                assert _x > 1
+                assert _x > 0
                 text_toks_len.append(_x - 1)
             text_toks_len = torch.tensor(text_toks_len).to(self.device)
             downsampling_out = self.downsampling(
@@ -253,11 +283,6 @@ class CascadedSpeechClip(BaseLightningModel):
 
             del downsampling_out
             audio_feat = audio_feat.permute(0, 2, 1)
-
-        # compute audio length
-        conv1d_length(audio_len, 2, 5, 0, 1)
-        mean_length(audio_len, 2, 2, 0)
-        conv1d_length(audio_len, 2, 2, 0, 1)
 
         # vector quantization
         if self.vq_type == "gumbel":
@@ -278,9 +303,21 @@ class CascadedSpeechClip(BaseLightningModel):
                 features=torch.stack([audio_feat, image_feat], dim=1),
                 labels=id,
             )
-            loss = vq_result["loss"] * self.beta + cl_loss
+            if q_loss is not None:
+                loss = (
+                    vq_result["loss"] * self.beta + cl_loss + self.cif_lamda_c * q_loss
+                )
+            else:
+                loss = vq_result["loss"] * self.beta + cl_loss
+            losses = {
+                "loss": loss,
+                "vq_loss": vq_result["loss"].detach(),
+                "cl_loss": cl_loss.detach(),
+            }
+            if q_loss is not None:
+                losses.update({"q_loss": q_loss.detach()})
 
-            return loss, audio_feat, image_feat, vq_result, id
+            return losses, audio_feat, image_feat, vq_result, id
 
         return audio_feat, image_feat, vq_result, id
 
@@ -359,26 +396,22 @@ class CascadedSpeechClip(BaseLightningModel):
                 os.makedirs(
                     os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
                 )
-        retokenizeText_output = []
-        # for enumerate()
-        print("asd")
-        for x in outputs:
-            for _g, _d in zip(x["gold_text"], x["detok_text"]):
-                retokenizeText_output.append({"gold": _g, "detok": _d})
-        with open(
-            os.path.join(
-                self.logger.log_dir,
-                "retokenizeText/",
-                "ep{}.json".format(self.current_epoch),
-            ),
-            "w",
-        ) as f:
-            json.dump(retokenizeText_output, f)
-        del retokenizeText_output
-        # print([x["detok_text"] for x in outputs])
-        # exit(1)
-        if self.log_detokenize_results:
-            os.path.join(self.logger.log_dir, "retokenizeText/", "vq_retokenize.txt")
+            retokenizeText_output = []
+
+            for x in outputs:
+                for _g, _d in zip(x["gold_text"], x["detok_text"]):
+                    retokenizeText_output.append({"gold": _g, "detok": _d})
+
+            with open(
+                os.path.join(
+                    self.logger.log_dir,
+                    "retokenizeText/",
+                    "ep{}.json".format(self.current_epoch),
+                ),
+                "w",
+            ) as f:
+                json.dump(retokenizeText_output, f)
+            del retokenizeText_output
 
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
