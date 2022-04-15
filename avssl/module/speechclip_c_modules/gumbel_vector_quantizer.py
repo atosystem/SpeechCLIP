@@ -56,18 +56,16 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            if isinstance(init_codebook, torch.Tensor):
-                # init self.vars with init_codebook
-                vq_dim = init_codebook.size(-1)
-                num_vars = init_codebook.size(0)
-                self.vars = nn.Parameter(
-                    init_codebook.view(1, num_groups * num_vars, var_dim)
-                )
-            elif init_codebook == 0:
-                # no codebook needed
-                self.vars = None
-            else:
-                raise NotImplementedError()
+            # if init_codebook == 0:
+            #     # no codebook needed
+            #     self.vars = None
+            # else:
+            # init self.vars with init_codebook
+            vq_dim = init_codebook.size(-1)
+            num_vars = init_codebook.size(0)
+            self.vars = nn.Parameter(
+                init_codebook.view(1, num_groups * num_vars, var_dim)
+            )
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)
@@ -218,19 +216,9 @@ class GumbelVectorQuantizer(nn.Module):
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
-        # if groundTruthPerplexity is given, minimized the l2 norm with groundTruthPerplexity
-        if self.groundTruthPerplexity is not None:
-            result["loss"] = (
-                self.perplexity_criteria(
-                    result["prob_perplexity"],
-                    torch.tensor(self.groundTruthPerplexity).type_as(x),
-                )
-                / (result["num_vars"] - self.groundTruthPerplexity) ** 2
-            )
-        else:
-            result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
-                "num_vars"
-            ]
+        result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
+            "num_vars"
+        ]
 
         if produce_targets:
             result["targets"] = (

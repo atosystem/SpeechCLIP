@@ -51,41 +51,11 @@ class CascadedSpeechClip(BaseLightningModel):
 
         self.text_embd_dim = self.clip.model.token_embedding.weight.size(-1)
 
-        if hasattr(config, "downsampling"):
-            self.downsampling_type = config.downsampling.type
-        else:
-            self.downsampling_type = "cnn"
-
-        # self.downsampling = nn.Sequential(
-        #     nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
-        #     nn.AvgPool1d(2, 2, 0),
-        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
-        # )
-
-        # filter 1
-        # self.downsampling = nn.Sequential(
-        #     nn.Conv1d(self.embd_dim, self.embd_dim, 5, 5, 0, 1),
-        #     nn.AvgPool1d(2, 2, 0),
-        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
-        # )
-        if self.downsampling_type == "cnn":
-            # filter 2
-            self.downsampling = nn.Sequential(
-                nn.Conv1d(self.embd_dim, self.embd_dim, 10, 5, 0, 1),
-                nn.AvgPool1d(2, 2, 0),
-                nn.Conv1d(self.embd_dim, self.text_embd_dim, 4, 2, 0, 1),
-            )
-        elif self.downsampling_type == "cif":
-            self.downsampling = CIF(
-                audio_feat_dim=self.embd_dim,
-                beta=config.downsampling.cif.beta,
-                scaling_stragety=config.downsampling.cif.scaling_stragety,
-                cal_quantity_loss=config.downsampling.cif.cal_quantity_loss,
-                tail_handling=config.downsampling.cif.tail_handling,
-            )
-            self.cif_lamda_c = config.downsampling.cif.lamda_c
-        else:
-            raise NotImplementedError()
+        self.downsampling = nn.Sequential(
+            nn.Conv1d(self.embd_dim, self.embd_dim, 2, 5, 0, 1),
+            nn.AvgPool1d(2, 2, 0),
+            nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
+        )
 
         self.vector_quantizer = None
         self.vq_type = config.vq.type
@@ -112,11 +82,8 @@ class CascadedSpeechClip(BaseLightningModel):
                 time_first=False,
                 activation=activation,
                 weight_proj_factor=2,
-                # init_codebook=self.clip.model.token_embedding.weight.to(config.device),
-                init_codebook=0,  # no codebook needed
-                groundTruthPerplexity=config.vq.groundTruthPerplexity
-                if hasattr(config.vq, "groundTruthPerplexity")
-                else None,
+                init_codebook=self.clip.model.token_embedding.weight.to(config.device),
+                # init_codebook=0,  # no codebook needed
             )
         elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -288,7 +255,7 @@ class CascadedSpeechClip(BaseLightningModel):
             audio_feat = audio_feat.permute(0, 2, 1)
 
         # compute audio length
-        conv1d_length(audio_len, 2, 2, 0, 1)
+        conv1d_length(audio_len, 2, 5, 0, 1)
         mean_length(audio_len, 2, 2, 0)
         conv1d_length(audio_len, 2, 2, 0, 1)
 
@@ -297,9 +264,7 @@ class CascadedSpeechClip(BaseLightningModel):
             self.vector_quantizer.set_num_updates(self.global_step)
         vq_result = self.vector_quantizer(audio_feat, produce_targets=True)
 
-        # if vq_result["subword_prob"].size(1) > 75:
-        #     vq_result["subword_prob"] = vq_result["subword_prob"][:, :75, :]
-
+        # mutliply subword distribution with clip text embeddings
         audio_feat = self.clip.encode_subword(vq_result, audio_len, self.vq_type)
         if cal_loss:
             audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
@@ -324,7 +289,7 @@ class CascadedSpeechClip(BaseLightningModel):
 
         result = {}
         for key in res.keys():
-            if key in ["code_cpx", "prob_cpx", "temp"]:
+            if key in ["code_perplexity", "prob_perplexity", "temp"]:
                 result["train_{}".format(key)] = res[key]
 
         self.log_dict(result, on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -355,7 +320,7 @@ class CascadedSpeechClip(BaseLightningModel):
         for key in res.keys():
             if isinstance(res[key], torch.Tensor):
                 res[key] = res[key].detach().cpu()
-            if key in ["code_cpx", "prob_cpx", "temp"]:
+            if key in ["code_perplexity", "prob_perplexity", "temp"]:
                 result["val_{}".format(key)] = res[key]
 
         detok_text = self.clip.deTokenize(res["targets"])
