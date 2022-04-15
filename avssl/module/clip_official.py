@@ -6,6 +6,7 @@ import clip
 import numpy as np
 import torch
 from clip.simple_tokenizer import SimpleTokenizer
+from importlib_metadata import distribution
 from PIL import Image
 from torch import nn
 
@@ -199,7 +200,6 @@ class ClipModel(nn.Module):
     def encode_subword_prob(
         self, result: dict, audio_len: torch.Tensor, vq_type: string
     ) -> torch.Tensor:
-        # start token embd = 49406, end token embd = 49407
         prob, token_idx = result["subword_prob"], result["targets"].squeeze(-1)
 
         bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
@@ -218,8 +218,9 @@ class ClipModel(nn.Module):
 
         assert vq_type in ["kmeans", "gumbel"], "Not implemented vq type"
         if vq_type == "kmeans":
+            # if using kmeans, we take hard targets but not soft prob distribution
             weighted_subword_embd = self.model.token_embedding(token_idx)
-        else: 
+        else:
             weighted_subword_embd = prob @ self.model.token_embedding.weight
 
         # prepend sot token in the front

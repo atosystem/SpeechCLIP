@@ -55,16 +55,16 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            if init_codebook == 0:
-                # no codebook needed
-                self.vars = None
-            else:
-                # init self.vars with init_codebook
-                vq_dim = init_codebook.size(-1)
-                num_vars = init_codebook.size(0)
-                self.vars = nn.Parameter(
-                    init_codebook.view(1, num_groups * num_vars, var_dim)
-                )
+            # if init_codebook == 0:
+            #     # no codebook needed
+            #     self.vars = None
+            # else:
+            # init self.vars with init_codebook
+            vq_dim = init_codebook.size(-1)
+            num_vars = init_codebook.size(0)
+            self.vars = nn.Parameter(
+                init_codebook.view(1, num_groups * num_vars, var_dim)
+            )
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)
@@ -183,8 +183,8 @@ class GumbelVectorQuantizer(nn.Module):
         # hard_probs: probs for all codewords in each codebook group : (grp, num_vars) (use one-hot as prob)
         hard_probs = torch.mean(hard_x.float(), dim=0)
 
-        # codebook complexity sigma {e^(entropy for codebook group)} for all codebook groups
-        result["code_cpx"] = torch.exp(
+        # codebook perplexity sigma {e^(entropy for codebook group)} for all codebook groups
+        result["code_perplexity"] = torch.exp(
             -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
         ).sum()
 
@@ -194,7 +194,7 @@ class GumbelVectorQuantizer(nn.Module):
         ).mean(dim=0)
 
         # prob_cpx : probs for all codewords in each codebook group : (grp, num_vars) (use softmax as prob)
-        result["prob_cpx"] = torch.exp(
+        result["prob_perplexity"] = torch.exp(
             -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)
         ).sum()
 
@@ -211,7 +211,9 @@ class GumbelVectorQuantizer(nn.Module):
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
-        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
+        result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
+            "num_vars"
+        ]
 
         if produce_targets:
             result["targets"] = (
