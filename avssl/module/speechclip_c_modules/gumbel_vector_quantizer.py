@@ -55,16 +55,18 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            # if init_codebook == 0:
-            #     # no codebook needed
-            #     self.vars = None
-            # else:
-            # init self.vars with init_codebook
-            vq_dim = init_codebook.size(-1)
-            num_vars = init_codebook.size(0)
-            self.vars = nn.Parameter(
-                init_codebook.view(1, num_groups * num_vars, var_dim)
-            )
+            if isinstance(init_codebook, torch.Tensor):
+                # init self.vars with init_codebook
+                vq_dim = init_codebook.size(-1)
+                num_vars = init_codebook.size(0)
+                self.vars = nn.Parameter(
+                    init_codebook.view(1, num_groups * num_vars, var_dim)
+                )
+            elif init_codebook == 0:
+                # no codebook needed
+                self.vars = None
+            else:
+                raise NotImplementedError()
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)
@@ -188,7 +190,7 @@ class GumbelVectorQuantizer(nn.Module):
             -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
         ).sum()
 
-        # average over minibatch and all timesteps of the codewords chosen prob. (grp, num_vars)
+        # average over minibatch and all timesteps of the codewords logits and get their prob by softmax (grp, num_vars)
         avg_probs = torch.softmax(
             x.view(bsz * tsz, self.groups, -1).float(), dim=-1
         ).mean(dim=0)

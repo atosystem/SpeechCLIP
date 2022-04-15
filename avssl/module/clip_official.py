@@ -166,8 +166,8 @@ class ClipModel(nn.Module):
         if self.selected_text_emb_ids is not None:
             for sent in res:
                 for i in range(len(sent)):
-                    sent[i] = self.original2Reduced[sent[i]]
-        return res.to(self.device)
+                    sent[i] = self.original2Reduced[sent[i].item()]
+        return res
 
     def deTokenize(self, sents):
         if isinstance(sents, torch.Tensor):

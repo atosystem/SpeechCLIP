@@ -33,8 +33,12 @@ class KmeansVectorQuantizer(nn.Module):
         """
         super().__init__()
         if init_codebook is not None:
-            vq_dim = init_codebook.size(-1)
-            num_vars = init_codebook.size(0)
+            if isinstance(init_codebook, torch.nn.Embedding):
+                vq_dim = init_codebook.embedding_dim
+                num_vars = init_codebook.num_embeddings
+            else:
+                vq_dim = init_codebook.size(-1)
+                num_vars = init_codebook.size(0)
 
         self.groups = groups
         self.combine_groups = combine_groups
@@ -49,11 +53,12 @@ class KmeansVectorQuantizer(nn.Module):
 
         self.var_dim = vq_dim // groups
         num_groups = groups if not combine_groups else 1
+        self.num_groups = num_groups
 
         if init_codebook is not None:
-            init_codebook = init_codebook.view(
-                num_vars, num_groups, self.var_dim
-            ).detach()
+            # init_codebook = init_codebook.view(
+            #     num_vars, num_groups, self.var_dim
+            # ).detach()
             self.embedding = init_codebook
         else:
             self.embedding = nn.Parameter(
@@ -79,8 +84,13 @@ class KmeansVectorQuantizer(nn.Module):
     @property
     def expand_embedding(self):
         if self.combine_groups:
-            return self.embedding.expand(self.num_vars, self.groups, self.var_dim)
-        return self.embedding
+            if isinstance(self.embedding, torch.nn.Embedding):
+                return self.embedding.weight.view(
+                    self.num_vars, self.num_groups, self.var_dim
+                ).expand(self.num_vars, self.groups, self.var_dim)
+            else:
+                return self.embedding.expand(self.num_vars, self.groups, self.var_dim)
+        return self.embedding.weight.view(self.num_vars, self.num_groups, self.var_dim)
 
     def forward_idx(self, x):
         res = self.forward(x, produce_targets=True)
