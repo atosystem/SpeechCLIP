@@ -390,7 +390,7 @@ class ParallelSpeechClip_AttPool(ParallelSpeechClipBase):
             else:
                 return loss, prePool_audio, prePool_image, id
 
-        self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return audio_feat, image_feat
 
     def validation_step(self, batch, batch_idx):
         # print("val")

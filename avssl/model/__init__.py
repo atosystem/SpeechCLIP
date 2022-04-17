@@ -1,3 +1,4 @@
+from .speechclip_c import CascadedSpeechClip
 from .speechclip_p import (
     ParallelClipTextImage,
     ParallelSpeechClip_AttPool,

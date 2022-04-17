@@ -23,6 +23,7 @@ class GumbelVectorQuantizer(nn.Module):
         weight_proj_depth=1,
         weight_proj_factor=1,
         init_codebook=None,
+        groundTruthPerplexity=None,
     ):
         """Vector quantization using gumbel softmax
 
@@ -44,8 +45,8 @@ class GumbelVectorQuantizer(nn.Module):
         self.groups = groups
         self.combine_groups = combine_groups
         self.input_dim = dim
-        self.num_vars = num_vars
         self.time_first = time_first
+        self.num_vars = num_vars
 
         assert (
             vq_dim % groups == 0
@@ -55,16 +56,18 @@ class GumbelVectorQuantizer(nn.Module):
         num_groups = groups if not combine_groups else 1
 
         if init_codebook is not None:
-            if init_codebook == 0:
-                # no codebook needed
-                self.vars = None
-            else:
+            if isinstance(init_codebook, torch.Tensor):
                 # init self.vars with init_codebook
                 vq_dim = init_codebook.size(-1)
                 num_vars = init_codebook.size(0)
                 self.vars = nn.Parameter(
                     init_codebook.view(1, num_groups * num_vars, var_dim)
                 )
+            elif init_codebook == 0:
+                # no codebook needed
+                self.vars = None
+            else:
+                raise NotImplementedError()
         else:
             self.vars = nn.Parameter(
                 torch.FloatTensor(1, num_groups * num_vars, var_dim)
@@ -98,6 +101,10 @@ class GumbelVectorQuantizer(nn.Module):
         self.max_temp, self.min_temp, self.temp_decay = temp
         self.curr_temp = self.max_temp
         self.codebook_indices = None
+
+        self.groundTruthPerplexity = groundTruthPerplexity
+        if self.groundTruthPerplexity is not None:
+            self.perplexity_criteria = nn.MSELoss()
 
     def set_num_updates(self, num_updates):
         self.curr_temp = max(
@@ -183,18 +190,18 @@ class GumbelVectorQuantizer(nn.Module):
         # hard_probs: probs for all codewords in each codebook group : (grp, num_vars) (use one-hot as prob)
         hard_probs = torch.mean(hard_x.float(), dim=0)
 
-        # codebook complexity sigma {e^(entropy for codebook group)} for all codebook groups
-        result["code_cpx"] = torch.exp(
+        # codebook perplexity sigma {e^(entropy for codebook group)} for all codebook groups
+        result["code_perplexity"] = torch.exp(
             -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
         ).sum()
 
-        # average over minibatch and all timesteps of the codewords chosen prob. (grp, num_vars)
+        # average over minibatch and all timesteps of the codewords logits and get their prob by softmax (grp, num_vars)
         avg_probs = torch.softmax(
             x.view(bsz * tsz, self.groups, -1).float(), dim=-1
         ).mean(dim=0)
 
         # prob_cpx : probs for all codewords in each codebook group : (grp, num_vars) (use softmax as prob)
-        result["prob_cpx"] = torch.exp(
+        result["prob_perplexity"] = torch.exp(
             -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)
         ).sum()
 
@@ -211,7 +218,19 @@ class GumbelVectorQuantizer(nn.Module):
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
-        result["loss"] = (result["num_vars"] - result["prob_cpx"]) / result["num_vars"]
+        # if groundTruthPerplexity is given, minimized the l2 norm with groundTruthPerplexity
+        if self.groundTruthPerplexity is not None:
+            result["loss"] = (
+                self.perplexity_criteria(
+                    result["prob_perplexity"],
+                    torch.tensor(self.groundTruthPerplexity).type_as(x),
+                )
+                / (result["num_vars"] - self.groundTruthPerplexity) ** 2
+            )
+        else:
+            result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
+                "num_vars"
+            ]
 
         if produce_targets:
             result["targets"] = (
@@ -223,7 +242,7 @@ class GumbelVectorQuantizer(nn.Module):
 
         vars = self.vars
         if vars is not None:
-            # calculate the folloing only if codebook exist
+            # calculate the following only if codebook exists
             if self.combine_groups:
                 # codebook groups shared same set of parameters
                 vars = vars.repeat(1, self.groups, 1)

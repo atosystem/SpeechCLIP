@@ -37,9 +37,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         parser.add_argument(
             "--config", type=str, default=str, help="Configuration file."
         )
-        parser.add_argument(
-            "--ckpt", type=str, default="", help="Checkpoint to resume training."
-        )
+        parser.add_argument("--ckpt", type=str, default="", help="Checkpoint to load.")
         parser.add_argument(
             "--device",
             type=str,
@@ -69,6 +67,9 @@ class TrainSpeechClipBaseTask(BaseTask):
             default=False,
             help="Inference model on test set",
         )
+        parser.add_argument(
+            "--resume", type=str, default="", help="Checkpoint to resume."
+        )
 
         return parser
 
@@ -87,6 +88,9 @@ class TrainSpeechClipBaseTask(BaseTask):
         assert self.args is not None
 
         seed_everything(self.args.seed)
+
+        if self.args.resume != "":
+            self.args.ckpt = self.args.resume
 
         if self.args.ckpt != "":
             model = model_cls.load_from_checkpoint(self.args.ckpt)
@@ -202,6 +206,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             ],
             enable_progress_bar=True,
             gpus=config.gpus,
+            resume_from_checkpoint=None if self.args.resume == "" else self.args.resume,
             **config.trainer,
         )
 
