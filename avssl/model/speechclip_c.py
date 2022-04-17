@@ -114,6 +114,9 @@ class CascadedSpeechClip(BaseLightningModel):
                 weight_proj_factor=2,
                 # init_codebook=self.clip.model.token_embedding.weight.to(config.device),
                 init_codebook=0,  # no codebook needed
+                groundTruthPerplexity=config.vq.groundTruthPerplexity
+                if hasattr(config.vq, "groundTruthPerplexity")
+                else None,
             )
         elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -267,7 +270,7 @@ class CascadedSpeechClip(BaseLightningModel):
             text_toks_len = []
             for t in text_toks:
                 _x = t.index(self.clip.endOfTxt_reduced)
-                assert _x > 0
+                assert _x > 1
                 text_toks_len.append(_x - 1)
             text_toks_len = torch.tensor(text_toks_len).to(self.device)
             downsampling_out = self.downsampling(

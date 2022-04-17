@@ -218,9 +218,19 @@ class GumbelVectorQuantizer(nn.Module):
         # add gumbel softmax hard target
         result["subword_prob"] = x.view(bsz, tsz, -1)
 
-        result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
-            "num_vars"
-        ]
+        # if groundTruthPerplexity is given, minimized the l2 norm with groundTruthPerplexity
+        if self.groundTruthPerplexity is not None:
+            result["loss"] = (
+                self.perplexity_criteria(
+                    result["prob_perplexity"],
+                    torch.tensor(self.groundTruthPerplexity).type_as(x),
+                )
+                / (result["num_vars"] - self.groundTruthPerplexity) ** 2
+            )
+        else:
+            result["loss"] = (result["num_vars"] - result["prob_perplexity"]) / result[
+                "num_vars"
+            ]
 
         if produce_targets:
             result["targets"] = (
