@@ -11,3 +11,7 @@ To run cascaded speechclip, run
 bash egs/run_speechclip_c.sh
 
 ```
+
+# Contribute
+Please run autoformatter before opening PR!
+Autoformat `audio-visual-ssl/dev-support/`

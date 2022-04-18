@@ -114,6 +114,9 @@ class CascadedSpeechClip(BaseLightningModel):
                 weight_proj_factor=2,
                 # init_codebook=self.clip.model.token_embedding.weight.to(config.device),
                 init_codebook=0,  # no codebook needed
+                groundTruthPerplexity=config.vq.groundTruthPerplexity
+                if hasattr(config.vq, "groundTruthPerplexity")
+                else None,
             )
         elif self.vq_type == "kmeans":
             self.vector_quantizer = KmeansVectorQuantizer(
@@ -244,30 +247,23 @@ class CascadedSpeechClip(BaseLightningModel):
         q_loss = None
         if self.downsampling_type == "cnn":
             #  down sampling
+            if isinstance(audio_feat, list):
+                audio_feat = audio_feat
             audio_feat = audio_feat.permute(0, 2, 1)  # (B, T, F) -> (B, F, T)
             audio_feat = self.downsampling(audio_feat)
-
-            # # compute audio length
-            # conv1d_length(audio_len, 2, 2, 0, 1)
-            # mean_length(audio_len, 2, 2, 0)
-            # conv1d_length(audio_len, 2, 2, 0, 1)
-
-            # # compute audio length
-            # conv1d_length(audio_len, 5, 5, 0, 1)
-            # mean_length(audio_len, 2, 2, 0)
-            # conv1d_length(audio_len, 2, 2, 0, 1)
 
             # compute audio length
             conv1d_length(audio_len, 10, 5, 0, 1)
             mean_length(audio_len, 2, 2, 0)
             conv1d_length(audio_len, 4, 2, 0, 1)
+            
         elif self.downsampling_type == "cif":
             text = batch["text"]
             text_toks = self.clip.prep_text(text).tolist()
             text_toks_len = []
             for t in text_toks:
                 _x = t.index(self.clip.endOfTxt_reduced)
-                assert _x > 0
+                assert _x > 1
                 text_toks_len.append(_x - 1)
             text_toks_len = torch.tensor(text_toks_len).to(self.device)
             downsampling_out = self.downsampling(
@@ -476,6 +472,7 @@ class CascadedSpeechClip(BaseLightningModel):
     def configure_optimizers(self):
         optimizers = []
         schedulers = []
+        audio_params = []
 
         if self.config.audio_encoder.trainable:
             audio_params = list(self.audio_encoder.parameters())

@@ -171,7 +171,8 @@ class ClipModel(nn.Module):
 
     def deTokenize(self, sents):
         if isinstance(sents, torch.Tensor):
-            sents = sents.squeeze().tolist()
+            # print(sents.shape)
+            sents = sents.view(*sents.shape[:2]).tolist()
         res = []
         if self.selected_text_emb_ids is not None:
             for sent in sents:
