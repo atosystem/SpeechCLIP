@@ -119,7 +119,13 @@ def mutualRetrieval(
 
     recall_results_IA["recall_random@1"] = 1 - recall_results_IA["recall_random@1"]
 
+    # convert to %
+    recall_results_IA["recall_random@1"] *= 100
+    recall_results_AI["recall_random@1"] *= 100
+
     for _k in ["recall@{}".format(r) for r in recall_at]:
+        recall_results_IA[_k] *= 100
+        recall_results_AI[_k] *= 100
         recall_results_mean[_k] = (recall_results_IA[_k] + recall_results_AI[_k]) / 2.0
 
     return recall_results_AI, recall_results_IA, recall_results_mean

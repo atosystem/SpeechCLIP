@@ -53,7 +53,7 @@ class S3prlSpeechEncoder(nn.Module):
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-        if hasattr(self.encoder.model.encoder, "layerdrop"):
+        if self.name.startswith("hubert"):
             if (
                 isinstance(layer_drop, float)
                 and layer_drop >= 0.0
@@ -71,7 +71,9 @@ class S3prlSpeechEncoder(nn.Module):
             feat = self.encoder(wav)
             self.out_dim = feat["last_hidden_state"].shape[2]
 
-        logging.info(f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim} layer_drop = {self.encoder.model.encoder.layerdrop}")
+        logging.info(
+            f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim} layer_drop = {self.encoder.model.encoder.layerdrop}"
+        )
 
     def forward(
         self,

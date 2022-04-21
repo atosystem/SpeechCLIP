@@ -7,7 +7,6 @@ from typing import Tuple, Union
 
 import numpy as np
 import torch
-from importlib_metadata import distribution
 from jiwer import cer, wer
 from torch import nn
 from torch.nn import functional as F
@@ -256,7 +255,7 @@ class CascadedSpeechClip(BaseLightningModel):
             conv1d_length(audio_len, 10, 5, 0, 1)
             mean_length(audio_len, 2, 2, 0)
             conv1d_length(audio_len, 4, 2, 0, 1)
-            
+
         elif self.downsampling_type == "cif":
             text = batch["text"]
             text_toks = self.clip.prep_text(text).tolist()
@@ -331,7 +330,7 @@ class CascadedSpeechClip(BaseLightningModel):
         self.log("train_cl_loss", losses["cl_loss"])
         self.log("train_vq_loss", losses["vq_loss"])
         if "q_loss" in losses:
-            self.log("q_loss", losses["q_loss"])
+            self.log("train_q_loss", losses["q_loss"])
 
         return {"loss": losses["loss"]}
 
@@ -348,7 +347,7 @@ class CascadedSpeechClip(BaseLightningModel):
             "val_cl_loss": losses["cl_loss"],
         }
         if "q_loss" in losses:
-            result.update({"q_loss": losses["q_loss"]})
+            result.update({"val_q_loss": losses["q_loss"]})
 
         for key in res.keys():
             if isinstance(res[key], torch.Tensor):
@@ -363,8 +362,8 @@ class CascadedSpeechClip(BaseLightningModel):
 
         result.update(
             {
-                "val_wer": wer_score,
-                "val_cer": cer_score,
+                "val_wer": wer_score * 100,
+                "val_cer": cer_score * 100,
             }
         )
 
