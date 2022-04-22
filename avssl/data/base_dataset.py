@@ -1,6 +1,7 @@
 # Ref: https://github.com/wnhsu/ResDAVEnet-VQ/blob/master/dataloaders/image_caption_dataset.py
 # Author: David Harwath, Wei-Ning Hsu
 
+import pickle
 from typing import List, Union
 
 import clip
@@ -35,6 +36,9 @@ class BaseImageCaptionDataset(Dataset):
         self.load_image = load_image
 
         self.data = []
+
+        with open("./avssl/data/flickr_stat/token_mapping.p", "rb") as fp:
+            self.token_mapping = pickle.load(fp)
 
     def _LoadAudio(self, path: str):
         """Load audio from file

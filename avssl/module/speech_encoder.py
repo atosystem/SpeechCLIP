@@ -29,7 +29,7 @@ class S3prlSpeechEncoder(nn.Module):
             trainable (bool, optional): Whether to update the model while training. Defaults to False.
             device (str, optional): Device. Defaults to "cpu".
             feat_select_idx (Union[str, list], optional): Feature selection indices. Defaults to "all".
-            layer_drop (Union[str, float], optional): Layer drop rate. Defaults to 0.0.
+            layerdrop (Union[str, float], optional): Layer drop rate. Defaults to 0.0.
         """
         super().__init__()
 
@@ -53,13 +53,13 @@ class S3prlSpeechEncoder(nn.Module):
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-        if hasattr(self.encoder, "layer_drop"):
+        if self.name.startswith("hubert"):
             if (
                 isinstance(layer_drop, float)
                 and layer_drop >= 0.0
                 and layer_drop <= 1.0
             ):
-                self.encoder.layer_drop = layer_drop
+                self.encoder.model.encoder.layerdrop = layer_drop
             elif layer_drop == "original":
                 pass
             else:
@@ -71,7 +71,9 @@ class S3prlSpeechEncoder(nn.Module):
             feat = self.encoder(wav)
             self.out_dim = feat["last_hidden_state"].shape[2]
 
-        logging.info(f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim}")
+        logging.info(
+            f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim} layer_drop = {self.encoder.model.encoder.layerdrop}"
+        )
 
     def forward(
         self,
