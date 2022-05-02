@@ -1,8 +1,8 @@
 #!/bin/bash
 
 python3 run_task.py \
-    "TrainCascadedSpeechClip" \
-    --config "config/speechclip_c/train_flickr.yaml" \
+    "TrainVQCascadedSpeechClip" \
+    --config "config/speechclip_c/train_flickr_vq.yaml" \
     --device "cuda:0" \
     --gpus 1 \
     --njobs 2 \

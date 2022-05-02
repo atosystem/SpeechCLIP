@@ -315,6 +315,31 @@ class ClipModel(nn.Module):
         """
         return self.model.encode_text(text)
 
+    def encode_keywords(self, keywords: torch.Tensor, keyword_num: int) -> torch.Tensor:
+
+        if isinstance(keywords, torch.Tensor):
+            bsz = keywords.size(0)
+        else:
+            raise TypeError(f"Unknown keywords type {type(keywords)}")
+        
+        text = torch.zeros([bsz, 77], device=self.device,  dtype=int)
+        sot_token, eot_token = 49406, 49407
+        text[:, 0] = torch.full(text[:, 0].size(), sot_token, device=self.device)
+        text[:, keyword_num+1] = torch.full(text[:, keyword_num+1].size(), eot_token, device=self.device)
+
+        x = self.model.token_embedding(text)
+        x[:, 1:1+keyword_num] = keywords
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.model.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.model.ln_final(x)
+
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
+
+        return x
+
     def encode_subword(
         self, prob: torch.Tensor, audio_len: torch.Tensor, vq_type: string
     ) -> torch.Tensor:
