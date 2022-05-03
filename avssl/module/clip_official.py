@@ -321,21 +321,22 @@ class ClipModel(nn.Module):
             bsz = keywords.size(0)
         else:
             raise TypeError(f"Unknown keywords type {type(keywords)}")
-        
+
         res = {}
         dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
         nearest_dist, nearest_token = torch.min(dist, dim=-1)
         res["nearest_token"] = nearest_token.unsqueeze(1)
         res["mean_dist"] = torch.mean(nearest_dist, dim=0)
-        
 
-        text = torch.zeros([bsz, 77], device=self.device,  dtype=int)
+        text = torch.zeros([bsz, 77], device=self.device, dtype=int)
         sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced
         text[:, 0] = torch.full(text[:, 0].size(), sot_token, device=self.device)
-        text[:, keyword_num+1] = torch.full(text[:, keyword_num+1].size(), eot_token, device=self.device)
+        text[:, keyword_num + 1] = torch.full(
+            text[:, keyword_num + 1].size(), eot_token, device=self.device
+        )
 
         x = self.model.token_embedding(text)
-        x[:, 1:1+keyword_num] = keywords
+        x[:, 1 : 1 + keyword_num] = keywords
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.model.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -346,7 +347,7 @@ class ClipModel(nn.Module):
         # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
 
         # take features from the eot embedding
-        x = x[:, 1+keyword_num] @ self.model.text_projection
+        x = x[:, 1 + keyword_num] @ self.model.text_projection
 
         return x, res
 

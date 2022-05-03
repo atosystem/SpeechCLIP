@@ -14,10 +14,7 @@ from avssl.data import (
     PlacesImageCaptionDataset,
     collate_image_captions,
 )
-from avssl.model import (
-    VQCascadedSpeechClip,
-    KeywordCascadedSpeechClip
-)
+from avssl.model import KeywordCascadedSpeechClip, VQCascadedSpeechClip
 
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
@@ -28,6 +25,7 @@ class TrainVQCascadedSpeechClip(TrainSpeechClipBaseTask):
 
     def run(self):
         super().run(VQCascadedSpeechClip)
+
 
 class TrainKeywordCascadedSpeechClip(TrainSpeechClipBaseTask):
     def __init__(self):
