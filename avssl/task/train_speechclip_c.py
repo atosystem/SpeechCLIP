@@ -8,14 +8,13 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader, random_split
 
-from avssl.base import OrderedNamespace
-from avssl.data import (
+from ..base import OrderedNamespace
+from ..data import (
     FlickrImageCaptionDataset,
     PlacesImageCaptionDataset,
     collate_image_captions,
 )
-from avssl.model import KeywordCascadedSpeechClip, VQCascadedSpeechClip
-
+from ..model import KeywordCascadedSpeechClip, VQCascadedSpeechClip
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 

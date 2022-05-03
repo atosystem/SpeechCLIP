@@ -5,8 +5,8 @@ import torch
 from s3prl import hub
 from torch import nn
 
-from avssl.data import random_crop_max_length
-from avssl.util import init_weights
+from ..data import random_crop_max_length
+from ..util import init_weights
 
 
 class S3prlSpeechEncoder(nn.Module):

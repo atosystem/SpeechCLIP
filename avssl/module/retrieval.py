@@ -86,7 +86,7 @@ def mutualRetrieval(
                 )[0]
             )
             / rank_AI.shape[0]
-        )
+        ).item()
     recall_results_AI["recall_random@1"] = k / rank_AI.shape[0]
 
     # IA (one to many)
@@ -108,7 +108,7 @@ def mutualRetrieval(
                 )[0]
             )
             / rank_IA.shape[0]
-        )
+        ).item()
     # average one image corresponds to len(all_audo_feats) // len(all_img_feats) audio
     recall_results_IA["recall_random@1"] = 1
     _recall_at = 1

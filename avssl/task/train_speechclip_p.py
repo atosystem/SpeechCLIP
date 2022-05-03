@@ -7,9 +7,9 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from torch.utils.data import DataLoader, random_split
 
-from avssl.base import OrderedNamespace
-from avssl.data import FlickrDataset, PlacesImageCaptionDataset, collate_general
-from avssl.model import (
+from ..base import OrderedNamespace
+from ..data import FlickrDataset, PlacesImageCaptionDataset, collate_general
+from ..model import (
     ParallelClipTextImage,
     ParallelSpeechClip_AttPool,
     ParallelSpeechClip_AttPool_FineGrain,
@@ -18,7 +18,6 @@ from avssl.model import (
     ParallelSpeechClip_MeanPool,
     ParallelSpeechClip_MeanPool_Text,
 )
-
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 
