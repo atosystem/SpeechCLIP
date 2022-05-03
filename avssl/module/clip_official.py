@@ -174,17 +174,17 @@ class ClipModel(nn.Module):
             # print(sents.shape)
             sents = sents.view(*sents.shape[:2]).tolist()
         res = []
-        if self.selected_text_emb_ids is not None:
-            for sent in sents:
+        for sent in sents:
+            if self.selected_text_emb_ids is not None:
                 for i in range(len(sent)):
                     sent[i] = self.reducedl2Original[sent[i]]
+            res.append(
+                self.tokenizer.decode(sent)
+                .replace("<|startoftext|>", "")
+                .replace("<|endoftext|>", "")
+                .strip()
+            )
 
-                res.append(
-                    self.tokenizer.decode(sent)
-                    .replace("<|startoftext|>", "")
-                    .replace("<|endoftext|>", "")
-                    .strip()
-                )
         return res
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
@@ -322,8 +322,15 @@ class ClipModel(nn.Module):
         else:
             raise TypeError(f"Unknown keywords type {type(keywords)}")
         
+        res = {}
+        dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
+        nearest_dist, nearest_token = torch.min(dist, dim=-1)
+        res["nearest_token"] = nearest_token.unsqueeze(1)
+        res["mean_dist"] = torch.mean(nearest_dist, dim=0)
+        
+
         text = torch.zeros([bsz, 77], device=self.device,  dtype=int)
-        sot_token, eot_token = 49406, 49407
+        sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced
         text[:, 0] = torch.full(text[:, 0].size(), sot_token, device=self.device)
         text[:, keyword_num+1] = torch.full(text[:, keyword_num+1].size(), eot_token, device=self.device)
 
@@ -336,9 +343,12 @@ class ClipModel(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
+        # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
 
-        return x
+        # take features from the eot embedding
+        x = x[:, 1+keyword_num] @ self.model.text_projection
+
+        return x, res
 
     def encode_subword(
         self, prob: torch.Tensor, audio_len: torch.Tensor, vq_type: string

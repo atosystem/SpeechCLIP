@@ -8,5 +8,4 @@ python3 run_task.py \
     --njobs 2 \
     --seed 7122 \
     --train \
-    --save_path "exp/sc_c/kw"
-exit
+    --save_path "exp/sc_c/kw_fix"

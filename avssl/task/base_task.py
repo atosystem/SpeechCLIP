@@ -1,5 +1,6 @@
 import abc
 import argparse
+from tabnanny import verbose
 
 import torch
 import yaml
@@ -213,7 +214,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         if self.args.train:
             trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
         if self.args.eval:
-            trainer.validate(model, dv_loader, ckpt_path=config.ckpt)
+            trainer.validate(model, dv_loader, ckpt_path=config.ckpt, verbose=True)
         if self.args.test:
             test_func = getattr(trainer, "test", None)
             if callable(test_func):
