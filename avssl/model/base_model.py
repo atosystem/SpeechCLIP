@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 import torch
 from torch import nn, optim
 
-from avssl.base import OrderedNamespace
+from ..base import OrderedNamespace
 
 
 class BaseLightningModel(pl.LightningModule):

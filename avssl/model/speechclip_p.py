@@ -7,8 +7,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from avssl.base import OrderedNamespace
-from avssl.module import (
+from ..base import OrderedNamespace
+from ..module import (
     AttentivePoolingLayer,
     ClipModel,
     MeanPoolingLayer,
@@ -16,8 +16,7 @@ from avssl.module import (
     SupConLoss,
     mutualRetrieval,
 )
-from avssl.optim import get_scheduler
-
+from ..optim import get_scheduler
 from .base_model import BaseLightningModel
 
 

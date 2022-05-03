@@ -8,17 +8,13 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader, random_split
 
-from avssl.base import OrderedNamespace
-from avssl.data import (
+from ..base import OrderedNamespace
+from ..data import (
     FlickrImageCaptionDataset,
     PlacesImageCaptionDataset,
     collate_image_captions,
 )
-from avssl.model import (
-    VQCascadedSpeechClip,
-    KeywordCascadedSpeechClip
-)
-
+from ..model import KeywordCascadedSpeechClip, VQCascadedSpeechClip
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 
@@ -28,6 +24,7 @@ class TrainVQCascadedSpeechClip(TrainSpeechClipBaseTask):
 
     def run(self):
         super().run(VQCascadedSpeechClip)
+
 
 class TrainKeywordCascadedSpeechClip(TrainSpeechClipBaseTask):
     def __init__(self):

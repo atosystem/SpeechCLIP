@@ -1,9 +1,9 @@
-from ast import keyword
 import json
 import logging
 import math
 import os
 import pickle
+from ast import keyword
 from typing import Tuple, Union
 
 import numpy as np
@@ -12,21 +12,17 @@ from jiwer import cer, wer
 from torch import nn
 from torch.nn import functional as F
 
-from avssl.base import OrderedNamespace
-from avssl.module import (
+from ..base import OrderedNamespace
+from ..module import (
     ClipModel,
     MeanPoolingLayer,
     S3prlSpeechEncoder,
     SupConLoss,
     mutualRetrieval,
 )
-from avssl.module.speechclip_c_modules import (
-    GumbelVectorQuantizer,
-    KmeansVectorQuantizer,
-)
-from avssl.module.speechclip_c_modules.cif import CIF
-from avssl.optim import get_scheduler
-
+from ..module.speechclip_c_modules import GumbelVectorQuantizer, KmeansVectorQuantizer
+from ..module.speechclip_c_modules.cif import CIF
+from ..optim import get_scheduler
 from .base_model import BaseLightningModel
 
 
@@ -102,6 +98,14 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             if hasattr(config.log_setting, "log_detokenize_results"):
                 self.log_detokenize_results = config.log_setting.log_detokenize_results
 
+    def feature_extractor_s3prl(self, wav):
+        """feature_extractor_s3prl
+        Implement for s3prl to get feature
+        Args:
+            wav ():
+        """
+        pass
+
     def forward_audio(
         self,
         wav: Union[torch.Tensor, list],
@@ -144,11 +148,20 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             BA_answers=IA_answers,
             recall_at=self.recall_at,
         )
-
-        self.log("val_recall_AI", recall_results_AI)
-        self.log("val_recall_IA", recall_results_IA)
-        self.log("val_recall_mean", recall_results_mean)
+        # print()
+        for _key in recall_results_AI:
+            self.log("val_recall_AI/{}".format(_key), recall_results_AI[_key])
+        for _key in recall_results_IA:
+            self.log("val_recall_IA/{}".format(_key), recall_results_IA[_key])
+        for _key in recall_results_mean:
+            self.log("val_recall_mean/{}".format(_key), recall_results_mean[_key])
         self.log("val_recall_mean_1", recall_results_mean["recall@1"])
+
+        # self.log("val_recall_AI", recall_results_AI)
+        # self.log("val_recall_IA", recall_results_IA)
+        # self.log("val_recall_mean", recall_results_mean)
+        # self.log("val_recall_mean_1", recall_results_mean["recall@1"])
+
 
 class VQCascadedSpeechClip(CascadedSpeechClip_Base):
     def __init__(self, config: OrderedNamespace):
@@ -470,7 +483,7 @@ class VQCascadedSpeechClip(CascadedSpeechClip_Base):
         )
         self.log("val_target_KL", target_KL)
         self.log("val_codebook_usage", codebook_usage)
-        
+
     def configure_optimizers(self):
         optimizers = []
         schedulers = []
@@ -517,14 +530,28 @@ class VQCascadedSpeechClip(CascadedSpeechClip_Base):
 
         return optimizers, schedulers
 
+
 class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
-        self.multihead_attn_layer = nn.MultiheadAttention(self.embd_dim, num_heads=1, dropout=0.1, batch_first=True)
+        self.multihead_attn_layer = nn.MultiheadAttention(
+            self.embd_dim, num_heads=1, dropout=0.1, batch_first=True
+        )
         self.keyword_num = 1
         self.downsampling_type = None
         if self.downsampling_type is None:
             self.linear_proj = nn.Linear(self.embd_dim, self.text_embd_dim)
+
+    def feature_extractor_s3prl(self, wav):
+        wav_len = [len(x) for x in wav]
+        audio_feat, audio_len = self.audio_encoder(wav, wav_len, feat_select_idx="all")
+        hidden_states = audio_feat["hidden_states"]
+        audio_feat = audio_feat["last_hidden_state"]
+        # for x in hidden_states:
+        #     print(x.shape)
+        # print()
+        # print(audio_feat.shape)
+        return audio_feat, hidden_states[:-1]
 
     def forward(
         self,
@@ -605,9 +632,11 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
 
         # Use multi-head attention layer to find keywords(cls)
         bsz = audio_feat.size(0)
-        cls = torch.nn.Parameter(torch.zeros(bsz, self.keyword_num, self.embd_dim)).to(self.device)
+        cls = torch.nn.Parameter(torch.zeros(bsz, self.keyword_num, self.embd_dim)).to(
+            self.device
+        )
         src = torch.cat([cls, audio_feat], dim=1)
-        keywords = (self.multihead_attn_layer(src, src, src)[0])[:, :self.keyword_num]
+        keywords = (self.multihead_attn_layer(src, src, src)[0])[:, : self.keyword_num]
         if self.downsampling_type is None:
             keywords = self.linear_proj(keywords)
         # Feed keyword into clip text encoder
@@ -637,12 +666,12 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             # if q_loss is not None:
             #     losses.update({"q_loss": q_loss.detach()})
 
-            return losses, audio_feat, image_feat, id
+            return losses, audio_feat, image_feat, id, keywords
 
         return audio_feat, image_feat, id
 
     def training_step(self, batch, batch_idx):
-        losses, _, _, _ = self.forward(batch, cal_loss=True)
+        losses, _, _, _, _ = self.forward(batch, cal_loss=True)
         result = {
             "train_loss": losses["cl_loss"],
         }
@@ -657,29 +686,20 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         self.log("train_cl_loss", losses["cl_loss"])
 
         return {"loss": losses["cl_loss"]}
-        
+
     def validation_step(self, batch, batch_idx):
-        losses, audio_feat, image_feat, id = self.forward(batch, cal_loss=True)
+        losses, audio_feat, image_feat, id, keywords = self.forward(
+            batch, cal_loss=True
+        )
 
         audio_feat = audio_feat.detach().cpu()
         image_feat = image_feat.detach().cpu()
+        keywords = keywords.detach().cpu().squeeze()
         id = id.detach().cpu()
 
         result = {
-            "val_loss": losses["cl_loss"],
+            "val_loss": losses["cl_loss"].item(),
         }
-
-        # detok_text = self.clip.deTokenize(res["targets"])
-
-        # wer_score = wer(batch["text"], detok_text)
-        # cer_score = cer(batch["text"], detok_text)
-
-        # result.update(
-        #     {
-        #         "val_wer": wer_score * 100,
-        #         "val_cer": cer_score * 100,
-        #     }
-        # )
 
         self.log_dict(
             result,
@@ -694,33 +714,64 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             "id": id,
             "audio_feat": audio_feat,
             "image_feat": image_feat,
+            "keywords": keywords,
             # "vq_targets": res["targets"].squeeze(),
-            # "gold_text": batch["text"],
+            "gold_text": batch["text"],
             # "detok_text": detok_text,
         }
 
     def validation_epoch_end(self, outputs):
-        if self.log_detokenize_results:
-            if not os.path.exists(os.path.join(self.logger.log_dir, "retokenizeText")):
-                os.makedirs(
-                    os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
+        if not os.path.exists(os.path.join(self.logger.log_dir, "retokenizeText")):
+            os.makedirs(
+                os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
+            )
+
+        gold_texts = []
+        for x in outputs:
+            gold_texts.extend(x["gold_text"])
+        # gold_texts = [ x["gold_text"] for x in outputs]
+        # gold_texts = [ x["gold_text"] for x in gold_texts]
+        all_keyword_embeddings = torch.cat(
+            [x["keywords"] for x in outputs], dim=0
+        ).squeeze()
+
+        assert all_keyword_embeddings.dim() == 2, all_keyword_embeddings.shape
+        assert all_keyword_embeddings.shape[1] == 512, all_keyword_embeddings.shape
+        all_retok_outputs = []
+        K = 10
+        tokenEmbeddings = self.clip.model.token_embedding.weight.detach().cpu()
+        for i in range(len(gold_texts)):
+            _k_values, _k_indices = torch.topk(
+                F.cosine_similarity(all_keyword_embeddings[i], tokenEmbeddings), K
+            )
+            tmp_outputs = []
+            for _ind, _dist in zip(_k_indices, _k_values):
+                tmp_outputs.append(
+                    [
+                        self.clip.tokenizer.decoder[
+                            # self.clip.reducedl2Original[_ind.item()]
+                            _ind.item()
+                        ],
+                        _dist.item(),
+                    ]
                 )
-            retokenizeText_output = []
+            all_retok_outputs.append(
+                {
+                    "gold": gold_texts[i],
+                    "neighbors": tmp_outputs,
+                }
+            )
 
-            for x in outputs:
-                for _g, _d in zip(x["gold_text"], x["detok_text"]):
-                    retokenizeText_output.append({"gold": _g, "detok": _d})
-
-            with open(
-                os.path.join(
-                    self.logger.log_dir,
-                    "retokenizeText/",
-                    "ep{}.json".format(self.current_epoch),
-                ),
-                "w",
-            ) as f:
-                json.dump(retokenizeText_output, f)
-            del retokenizeText_output
+        with open(
+            os.path.join(
+                self.logger.log_dir,
+                "retokenizeText/",
+                "keywords_ep{}.json".format(self.current_epoch),
+            ),
+            "w",
+        ) as f:
+            json.dump(all_retok_outputs, f)
+        del all_retok_outputs
 
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
@@ -765,7 +816,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         if self.config.audio_encoder.trainable:
             audio_params = list(self.audio_encoder.parameters())
 
-        if self.downsampling_type is not None: 
+        if self.downsampling_type is not None:
             audio_params = audio_params + list(self.downsampling.parameters())
 
         audio_params = audio_params + list(self.multihead_attn_layer.parameters())
