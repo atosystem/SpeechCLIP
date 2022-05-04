@@ -80,6 +80,8 @@ class ClipModel(nn.Module):
             self.model.token_embedding = nn.Embedding.from_pretrained(
                 reduced_embedding_weight
             )
+            if not self.text_encoder_trainable:
+                self.model.token_embedding.weight.requires_grad = False
             self.original2Reduced = {
                 old_id: _new_id
                 for (_new_id, old_id) in enumerate(self.selected_text_emb_ids)
@@ -323,10 +325,10 @@ class ClipModel(nn.Module):
             raise TypeError(f"Unknown keywords type {type(keywords)}")
 
         res = {}
-        dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
-        nearest_dist, nearest_token = torch.min(dist, dim=-1)
-        res["nearest_token"] = nearest_token.unsqueeze(1)
-        res["mean_dist"] = torch.mean(nearest_dist, dim=0)
+        # dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
+        # nearest_dist, nearest_token = torch.min(dist, dim=-1)
+        # res["nearest_token"] = nearest_token.unsqueeze(1)
+        # res["mean_dist"] = torch.mean(nearest_dist, dim=0)
 
         text = torch.zeros([bsz, 77], device=self.device, dtype=int)
         sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced

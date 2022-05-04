@@ -1,4 +1,4 @@
-from .speechclip_c import KeywordCascadedSpeechClip, VQCascadedSpeechClip
+from .speechclip_c import *
 from .speechclip_p import (
     ParallelClipTextImage,
     ParallelSpeechClip_AttPool,

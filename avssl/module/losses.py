@@ -12,11 +12,21 @@ class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR"""
 
-    def __init__(self, temperature=0.07, contrast_mode="all", base_temperature=0.07):
+    def __init__(self, temperature=0.07, contrast_mode="all", base_temperature=0.07,learnable_temperature=True):
         super(SupConLoss, self).__init__()
-        self.temperature = temperature
+        self.learnable_temperature = learnable_temperature
+        if learnable_temperature:
+            self.temperature = torch.nn.parameter.Parameter(torch.FloatTensor([temperature,]))
+        else:
+            self.temperature = temperature
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
+
+    def get_temp(self):
+        if self.learnable_temperature:
+            return self.temperature.item()
+        else:
+            return self.temperature
 
     def forward(self, features, labels=None, mask=None):
         """Compute loss for model. If both `labels` and `mask` are None,

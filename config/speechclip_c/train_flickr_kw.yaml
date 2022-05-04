@@ -11,9 +11,10 @@ log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
 
 cl_loss:
-  temperature: 1
-  base_temperature: 1
+  temperature: 1.5
+  base_temperature: 1.0
   contrast_mode: all
+  learnable_temperature: true
 
 retrieval:
   recall_at: [1,5,10]
@@ -45,7 +46,7 @@ audio_encoder:
 
 trainer:
   max_steps: 50000
-  gradient_clip_val: 5
+  gradient_clip_val: 8
   accumulate_grad_batches: 8
   check_val_every_n_epoch: 1
   precision: 16
