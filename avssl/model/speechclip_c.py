@@ -639,15 +639,19 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         cls = torch.cat([self.cls] * bsz, dim=0)
         src = torch.cat([cls, audio_feat], dim=1)
 
-        key_padding_mask = torch.ones([bsz, audio_feat.size(1)+self.keyword_num])
+        key_padding_mask = torch.ones([bsz, audio_feat.size(1) + self.keyword_num])
         for mask, len in zip(key_padding_mask, audio_len):
-            len += self.keyword_num # add cls 
+            len += self.keyword_num  # add cls
             mask[:len] = torch.zeros(mask[:len].size())
         key_padding_mask = key_padding_mask.bool().to(self.device)
-        keywords = (self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[0])[:, : self.keyword_num]
+        keywords = (
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
+        )[:, : self.keyword_num]
         if self.downsampling_type is None:
             keywords = self.linear_proj(keywords)
-        
+
         # Feed keyword into clip text encoder
         audio_feat, res = self.clip.encode_keywords(keywords, self.keyword_num)
 
