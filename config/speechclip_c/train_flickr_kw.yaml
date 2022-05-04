@@ -11,7 +11,7 @@ log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
 
 cl_loss:
-  temperature: 1.5
+  temperature: 0.7
   base_temperature: 1.0
   contrast_mode: all
   learnable_temperature: true
@@ -36,7 +36,7 @@ audio_encoder:
   optim:
     name: Adam
     args:
-      lr: 1.e-4
+      lr: 1.e-3
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
@@ -52,7 +52,7 @@ trainer:
   precision: 16
   logger: true
   log_every_n_steps: 1
-  default_root_dir: exp/sc_c/kw_fix
+  default_root_dir: exp/sc_c/kw_tmp0.7
   num_sanity_val_steps: 0
   # accelerator: dp
   # limit_train_batches: 1

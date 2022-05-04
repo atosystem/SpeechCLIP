@@ -99,6 +99,25 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             if hasattr(config.log_setting, "log_detokenize_results"):
                 self.log_detokenize_results = config.log_setting.log_detokenize_results
 
+    # delete v_num
+    # def get_progress_bar_dict(self):
+    #     tqdm_dict = super().get_progress_bar_dict()
+    #     if 'v_num' in tqdm_dict:
+    #         del tqdm_dict['v_num']
+    #     return tqdm_dict
+
+    # def log_grad_norm(self, grad_norm_dict) -> None:
+    #     """Override this method to change the default behaviour of ``log_grad_norm``.
+    #     If clipping gradients, the gradients will not have been clipped yet.
+    #     Args:
+    #         grad_norm_dict: Dictionary containing current grad norm metrics
+    #     Example::
+    #         # DEFAULT
+    #         def log_grad_norm(self, grad_norm_dict):
+    #             self.log_dict(grad_norm_dict, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+    #     """
+    #     self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=True, logger=False)
+
     def feature_extractor_s3prl(self, wav):
         """feature_extractor_s3prl
         Implement for s3prl to get feature
@@ -821,11 +840,12 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
 
         if self.downsampling_type is not None:
             audio_params = audio_params + list(self.downsampling.parameters())
+        else: 
+            audio_params = audio_params + list(self.linear_proj.parameters())
 
-        audio_params = audio_params + list(self.multihead_attn_layer.parameters())
-        audio_params = audio_params + list(self.linear_proj.parameters())
+        audio_params = audio_params + [self.cls] + list(self.multihead_attn_layer.parameters())
 
-        audio_params = audio_params + [self.cls] + list(self.attentionBlock_Norm.parameters())
+        audio_params = audio_params + list(self.attentionBlock_Norm.parameters())
 
         audio_params = audio_params + list(self.criterion.parameters())
 
