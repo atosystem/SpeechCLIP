@@ -117,12 +117,13 @@ class S3prlSpeechEncoder(nn.Module):
             with torch.no_grad():
                 feat = self.encoder(wav)
 
-        if len(wav_len) == 0:
-            wav_len = [len(w) for w in wav]
+        # if len(wav_len) == 0:
+        wav_len = [len(w) for w in wav]
 
         feat_len = torch.LongTensor(
             [round(l / self.downsample_rate) for l in wav_len]
         ).to(feat["last_hidden_state"].device)
+        feat_len = torch.clamp_max(feat_len, feat["last_hidden_state"].shape[1])
 
         if feat_select_idx is None:
             feat_select_idx = self.feat_select_idx
