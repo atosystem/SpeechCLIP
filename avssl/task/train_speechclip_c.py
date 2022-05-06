@@ -14,7 +14,12 @@ from ..data import (
     PlacesImageCaptionDataset,
     collate_image_captions,
 )
-from ..model import KeywordCascadedSpeechClip, VQCascadedSpeechClip, KeywordCascadedSpeechClip_ProjVQ,KeywordCascadedSpeechClip_ProjVQ_Cosine
+from ..model import (
+    KeywordCascadedSpeechClip,
+    KeywordCascadedSpeechClip_ProjVQ,
+    KeywordCascadedSpeechClip_ProjVQ_Cosine,
+    VQCascadedSpeechClip,
+)
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 
@@ -33,6 +38,7 @@ class TrainKeywordCascadedSpeechClip(TrainSpeechClipBaseTask):
     def run(self):
         super().run(KeywordCascadedSpeechClip)
 
+
 class TrainKeywordProjVQCascadedSpeechClip(TrainSpeechClipBaseTask):
     def __init__(self):
         super().__init__()
@@ -40,10 +46,10 @@ class TrainKeywordProjVQCascadedSpeechClip(TrainSpeechClipBaseTask):
     def run(self):
         super().run(KeywordCascadedSpeechClip_ProjVQ)
 
+
 class TrainKeywordProjVQCosineCascadedSpeechClip(TrainSpeechClipBaseTask):
     def __init__(self):
         super().__init__()
 
     def run(self):
         super().run(KeywordCascadedSpeechClip_ProjVQ_Cosine)
-    

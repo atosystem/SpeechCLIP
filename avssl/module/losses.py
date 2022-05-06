@@ -12,11 +12,23 @@ class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR"""
 
-    def __init__(self, temperature=0.07, contrast_mode="all", base_temperature=0.07,learnable_temperature=True):
+    def __init__(
+        self,
+        temperature=0.07,
+        contrast_mode="all",
+        base_temperature=0.07,
+        learnable_temperature=True,
+    ):
         super(SupConLoss, self).__init__()
         self.learnable_temperature = learnable_temperature
         if learnable_temperature:
-            self.temperature = torch.nn.parameter.Parameter(torch.FloatTensor([temperature,]))
+            self.temperature = torch.nn.parameter.Parameter(
+                torch.FloatTensor(
+                    [
+                        temperature,
+                    ]
+                )
+            )
         else:
             self.temperature = temperature
         self.contrast_mode = contrast_mode
@@ -102,7 +114,7 @@ class SupConLoss(nn.Module):
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
         # loss
-        loss = - (1 / self.base_temperature) * mean_log_prob_pos
+        loss = -(1 / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
