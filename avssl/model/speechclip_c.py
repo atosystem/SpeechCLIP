@@ -585,7 +585,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
 
         logging.info("Start init [CLS]")
         self.cls = torch.nn.Parameter(torch.randn([1, self.keyword_num, self.embd_dim]))
-        
+
     def feature_extractor_s3prl(self, wav):
         wav_len = [len(x) for x in wav]
         audio_feat, audio_len = self.audio_encoder(wav, wav_len, feat_select_idx="all")
