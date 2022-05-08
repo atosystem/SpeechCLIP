@@ -31,6 +31,7 @@ class SupConLoss(nn.Module):
             )
         else:
             self.temperature = temperature
+
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
 

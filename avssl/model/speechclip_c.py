@@ -95,6 +95,7 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             temperature=config.cl_loss.temperature,
             contrast_mode=config.cl_loss.contrast_mode,
             base_temperature=config.cl_loss.base_temperature,
+            learnable_temperature=config.cl_loss.learnable_temperature
         )
 
         self.log_detokenize_results = True
