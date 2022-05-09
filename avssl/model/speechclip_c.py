@@ -570,14 +570,14 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
         self.multihead_attn_layer = nn.MultiheadAttention(
-            self.embd_dim, num_heads=1, dropout=0.1, batch_first=True
+            self.embd_dim, num_heads=8, dropout=0.1, batch_first=True
         )
         self.attentionBlock_Norm = nn.LayerNorm(self.embd_dim, eps=1e-5)
 
         self.keyword_num = config.keyword.number
-        self.mutual_atten = config.keyword.mutual_attention
+        # self.mutual_atten = config.keyword.mutual_attention
         print(f"Using {self.keyword_num} keyword")
-        print(f"Keyword mutual_atten: {self.mutual_atten}")
+        # print(f"Keyword mutual_atten: {self.mutual_atten}")
 
         self.downsampling_type = None
         if self.downsampling_type is None:
@@ -599,20 +599,14 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         return audio_feat, hidden_states[:]
 
     def get_keypadding_mask(
-        self, bsz: int, length: int, audio_len: torch.Tensor, atten_kw_idx="all"
+        self, bsz: int, length: int, audio_len: torch.Tensor
     ) -> torch.Tensor:
         key_padding_mask = torch.ones([bsz, length])
         for mask, len in zip(key_padding_mask, audio_len):
             mask[self.keyword_num : len] = torch.zeros(
                 mask[self.keyword_num : len].size()
             )
-            if atten_kw_idx == "all":
-                mask[: self.keyword_num] = torch.zeros(mask[: self.keyword_num].size())
-            else:
-                assert (
-                    0 <= atten_kw_idx <= self.keyword_num
-                ), "invalid keyword index to attend"
-                mask[atten_kw_idx] = torch.zeros(mask[atten_kw_idx].size())
+            mask[: self.keyword_num] = torch.zeros(mask[: self.keyword_num].size())
         key_padding_mask = key_padding_mask.bool().to(self.device)
 
         return key_padding_mask
@@ -642,30 +636,30 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         cls = torch.cat([self.cls] * bsz, dim=0)
         src = torch.cat([cls, audio_feat], dim=1)
 
-        if self.mutual_atten:
-            key_padding_mask = self.get_keypadding_mask(bsz, total_len, audio_len)
-            keywords = self.attentionBlock_Norm(
-                self.multihead_attn_layer(
-                    src, src, src, key_padding_mask=key_padding_mask
-                )[0]
-                + src
-            )
-            keywords = keywords[:, : self.keyword_num]
-        else:
-            kw_list = []
-            for i in range(self.keyword_num):
-                key_padding_mask = self.get_keypadding_mask(
-                    bsz, total_len, audio_len, atten_kw_idx=i
-                )
-                keyword = self.attentionBlock_Norm(
-                    self.multihead_attn_layer(
-                        src, src, src, key_padding_mask=key_padding_mask
-                    )[0]
-                    + src
-                )[:, i]
-                kw_list.append(keyword)
-                del key_padding_mask
-            keywords = torch.stack(kw_list, dim=1)
+        # if self.mutual_atten:
+        key_padding_mask = self.get_keypadding_mask(bsz, total_len, audio_len)
+        keywords = self.attentionBlock_Norm(
+            self.multihead_attn_layer(
+                src, src, src, key_padding_mask=key_padding_mask
+            )[0]
+            + src
+        )
+        keywords = keywords[:, : self.keyword_num]
+        # else:
+        #     kw_list = []
+        #     for i in range(self.keyword_num):
+        #         key_padding_mask = self.get_keypadding_mask(
+        #             bsz, total_len, audio_len, atten_kw_idx=i
+        #         )
+        #         keyword = self.attentionBlock_Norm(
+        #             self.multihead_attn_layer(
+        #                 src, src, src, key_padding_mask=key_padding_mask
+        #             )[0]
+        #             + src
+        #         )[:, i]
+        #         kw_list.append(keyword)
+        #         del key_padding_mask
+        #     keywords = torch.stack(kw_list, dim=1)
 
         if self.downsampling_type is None:
             keywords = self.linear_proj(keywords)

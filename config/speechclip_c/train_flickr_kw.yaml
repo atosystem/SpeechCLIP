@@ -26,8 +26,7 @@ clip:
   reduce_subword_embbedding: ./avssl/data/flickr_stat/text_clip_vocab_usage_byfreq.npy # npy file for the selected embedding ID and its frequency
 
 keyword:
-  number: 1
-  mutual_attention: true
+  number: 4
 
 audio_encoder:
   type: s3prl
@@ -56,7 +55,7 @@ trainer:
   precision: 16
   logger: true
   log_every_n_steps: 1
-  default_root_dir: trash
+  default_root_dir: exp/sc_c/kw4
   num_sanity_val_steps: 0
   # accelerator: dp
   # limit_train_batches: 1
