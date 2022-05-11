@@ -11,6 +11,12 @@ log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
   log_detokenize_results_every_n_epoch: 5
 
+codebook_penalty:
+  type: cosine
+  loss_weight: [0,    0, 1  ]
+  keypoints  : [0,10000, 10010 ]
+  save_keypoint: 10000
+
 cl_loss:
   temperature: 1.0
   base_temperature: 1.0
@@ -28,7 +34,7 @@ clip:
 
 keyword:
   attention_heads: 8
-  number: 1
+  number: 2
   detokenized_K_neighbors: 10
 
 audio_encoder:

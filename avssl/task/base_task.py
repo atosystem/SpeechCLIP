@@ -1,7 +1,9 @@
 import abc
 import argparse
+import os
 from tabnanny import verbose
 
+import pytorch_lightning
 import torch
 import yaml
 from pytorch_lightning import Trainer, seed_everything
@@ -85,7 +87,7 @@ class TrainSpeechClipBaseTask(BaseTask):
 
         return args
 
-    def run(self, model_cls):
+    def run(self, model_cls, custom_trainer_callbacks=[]):
         assert self.args is not None
 
         seed_everything(self.args.seed)
@@ -204,6 +206,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                 TQDMProgressBar(),
                 model_checkpoint_val_loss,
                 model_checkpoint_recall,
+                *custom_trainer_callbacks,
             ],
             enable_progress_bar=True,
             gpus=config.gpus,
