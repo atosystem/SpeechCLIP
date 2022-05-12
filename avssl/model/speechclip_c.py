@@ -570,7 +570,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
         self.multihead_attn_layer = nn.MultiheadAttention(
-            self.embd_dim, num_heads=8, dropout=0.1, batch_first=True
+            self.embd_dim, num_heads=config.keyword.attn_head_num, dropout=0.1, batch_first=True
         )
         self.attentionBlock_Norm = nn.LayerNorm(self.embd_dim, eps=1e-5)
 
