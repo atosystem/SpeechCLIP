@@ -27,6 +27,7 @@ from ..module.speechclip_c_modules import (
 )
 from ..module.speechclip_c_modules.cif import CIF
 from ..optim import get_scheduler
+from ..util.penalty_scheduler import PenaltyScheduler
 from .base_model import BaseLightningModel
 
 
@@ -54,38 +55,7 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         if hasattr(config, "downsampling"):
             self.downsampling_type = config.downsampling.type
         else:
-            self.downsampling_type = "cnn"
-
-        # self.downsampling = nn.Sequential(
-        #     nn.Conv1d(self.embd_dim, self.embd_dim, 2, 2, 0, 1),
-        #     nn.AvgPool1d(2, 2, 0),
-        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
-        # )
-
-        # filter 1
-        # self.downsampling = nn.Sequential(
-        #     nn.Conv1d(self.embd_dim, self.embd_dim, 5, 5, 0, 1),
-        #     nn.AvgPool1d(2, 2, 0),
-        #     nn.Conv1d(self.embd_dim, self.text_embd_dim, 2, 2, 0, 1),
-        # )
-        # if self.downsampling_type == "cnn":
-        #     # filter 2
-        #     self.downsampling = nn.Sequential(
-        #         nn.Conv1d(self.embd_dim, self.embd_dim, 10, 5, 0, 1),
-        #         nn.AvgPool1d(2, 2, 0),
-        #         nn.Conv1d(self.embd_dim, self.text_embd_dim, 4, 2, 0, 1),
-        #     )
-        # elif self.downsampling_type == "cif":
-        #     self.downsampling = CIF(
-        #         audio_feat_dim=self.embd_dim,
-        #         beta=config.downsampling.cif.beta,
-        #         scaling_stragety=config.downsampling.cif.scaling_stragety,
-        #         cal_quantity_loss=config.downsampling.cif.cal_quantity_loss,
-        #         tail_handling=config.downsampling.cif.tail_handling,
-        #     )
-        #     self.cif_lamda_c = config.downsampling.cif.lamda_c
-        # else:
-        #     raise NotImplementedError()
+            self.downsampling_type = None
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -95,13 +65,22 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             temperature=config.cl_loss.temperature,
             contrast_mode=config.cl_loss.contrast_mode,
             base_temperature=config.cl_loss.base_temperature,
-            learnable_temperature=config.cl_loss.learnable_temperature
+            learnable_temperature=config.cl_loss.learnable_temperature,
         )
 
         self.log_detokenize_results = True
         if hasattr(config, "log_setting"):
             if hasattr(config.log_setting, "log_detokenize_results"):
                 self.log_detokenize_results = config.log_setting.log_detokenize_results
+        self.feat_select_idx = config.audio_encoder.feat_select_idx
+        if self.feat_select_idx == "all":
+            logging.warning("init self.audio_encoder_layer_weights")
+            self.ae_layer_prob = nn.Softmax(dim=0)
+            self.audio_encoder_layer_weights = nn.parameter.Parameter(
+                torch.randn(
+                    13,
+                )
+            )
 
     # delete v_num
     # def get_progress_bar_dict(self):
@@ -136,6 +115,17 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         wav_len: Union[torch.Tensor, list] = [],
     ) -> Union[Tuple[Union[torch.Tensor, list], torch.Tensor], torch.Tensor]:
         audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
+        if self.feat_select_idx == "all":
+            audio_feat = torch.stack(audio_feat["hidden_states"], dim=0)
+            n_layer, bsz, t_len, h_dim = audio_feat.shape
+            layer_weight = self.ae_layer_prob(self.audio_encoder_layer_weights.view(
+                n_layer, -1
+            ))
+            audio_feat = layer_weight * audio_feat.view(n_layer, -1)
+            audio_feat = audio_feat.view(n_layer, bsz, t_len, h_dim)
+            audio_feat = audio_feat.sum(dim=0)
+            assert audio_feat.shape == (bsz, t_len, h_dim)
+
         return audio_feat, audio_feat_len
 
     def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
@@ -172,15 +162,6 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             BA_answers=IA_answers,
             recall_at=self.recall_at,
         )
-        # print()
-        # for _key in recall_results_AI:
-        #     self.log("val_recall_AI/{}".format(_key), recall_results_AI[_key])
-        # for _key in recall_results_IA:
-        #     self.log("val_recall_IA/{}".format(_key), recall_results_IA[_key])
-        # for _key in recall_results_mean:
-        #     self.log("val_recall_mean/{}".format(_key), recall_results_mean[_key])
-        # self.log("val_recall_mean_1", recall_results_mean["recall@1"])
-
         self.logger.experiment.add_scalars(
             "val_recall_AI", recall_results_AI, self.global_step
         )
@@ -190,11 +171,6 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         self.logger.experiment.add_scalars(
             "val_recall_mean", recall_results_mean, self.global_step
         )
-        # self.logger.experiment.add_scalar('val_recall_mean_1',recall_results_mean["recall@1"] , self.global_step)
-
-        # self.log("val_recall_AI", recall_results_AI)
-        # self.log("val_recall_IA", recall_results_IA)
-        # self.log("val_recall_mean", recall_results_mean)
         self.log("val_recall_mean_1", recall_results_mean["recall@1"])
 
 
@@ -569,33 +545,61 @@ class VQCascadedSpeechClip(CascadedSpeechClip_Base):
 class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
+        if not hasattr(config.keyword, "attention_heads"):
+            config.keyword.attention_heads = 1
         self.multihead_attn_layer = nn.MultiheadAttention(
-            self.embd_dim, num_heads=config.keyword.attn_head_num, dropout=0.1, batch_first=True
+            self.embd_dim,
+            num_heads=config.keyword.attention_heads,
+            dropout=0.1,
+            batch_first=True,
         )
         self.attentionBlock_Norm = nn.LayerNorm(self.embd_dim, eps=1e-5)
 
         self.keyword_num = config.keyword.number
-        # self.mutual_atten = config.keyword.mutual_attention
-        print(f"Using {self.keyword_num} keyword")
-        # print(f"Keyword mutual_atten: {self.mutual_atten}")
+        print(
+            f"Using {self.keyword_num} keyword, {config.keyword.attention_heads} heads for each keyword"
+        )
 
         self.downsampling_type = None
-        if self.downsampling_type is None:
-            self.linear_proj = nn.Linear(self.embd_dim, self.text_embd_dim)
+        self.linear_proj = nn.Linear(self.embd_dim, self.text_embd_dim)
+
         self.log_detokenize_results = True
+        if hasattr(config.log_setting, "log_detokenize_results_every_n_epoch"):
+            self.log_detokenize_results_every_n_epoch = (
+                config.log_setting.log_detokenize_results_every_n_epoch
+            )
 
         logging.info("Start init [CLS]")
         self.cls = torch.nn.Parameter(torch.randn([1, self.keyword_num, self.embd_dim]))
 
-    def feature_extractor_s3prl(self, wav):
+    def feature_extractor_s3prl(self, wav, include_last_attention=True):
         wav_len = [len(x) for x in wav]
         audio_feat, audio_len = self.audio_encoder(wav, wav_len, feat_select_idx="all")
         hidden_states = audio_feat["hidden_states"]
         audio_feat = audio_feat["last_hidden_state"]
-        # for x in hidden_states:
-        #     print(x.shape)
-        # print()
-        # print(audio_feat.shape)
+
+        if not include_last_attention:
+            return audio_feat, hidden_states[:]
+        # Use multi-head attention layer to find keywords(cls)
+        bsz = audio_feat.size(0)
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = torch.ones([bsz, audio_feat.size(1) + self.keyword_num])
+        for mask, _len in zip(key_padding_mask, audio_len):
+            _len += self.keyword_num  # add cls
+            mask[:_len] = torch.zeros(mask[:_len].size())
+
+        key_padding_mask = key_padding_mask.bool().to(src.device)
+
+        keywords = self.attentionBlock_Norm(
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
+            + src
+        )
+        hidden_states = hidden_states + tuple([keywords[:, self.keyword_num :, :]])
+
         return audio_feat, hidden_states[:]
 
     def get_keypadding_mask(
@@ -603,13 +607,48 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     ) -> torch.Tensor:
         key_padding_mask = torch.ones([bsz, length])
         for mask, len in zip(key_padding_mask, audio_len):
-            mask[self.keyword_num : len] = torch.zeros(
-                mask[self.keyword_num : len].size()
-            )
-            mask[: self.keyword_num] = torch.zeros(mask[: self.keyword_num].size())
+            mask[:len] = 0.0
+            # mask[self.keyword_num : len] = torch.zeros(
+            #     mask[self.keyword_num : len].size()
+            # )
+            # mask[: self.keyword_num] = torch.zeros(mask[: self.keyword_num].size())
         key_padding_mask = key_padding_mask.bool().to(self.device)
 
         return key_padding_mask
+
+    def get_attention_weights(self, wav):
+        wav_len = [len(x) for x in wav]
+        audio_feat, audio_len = self.audio_encoder(wav, wav_len, feat_select_idx="all")
+        hidden_states = audio_feat["hidden_states"]
+        audio_feat = audio_feat["last_hidden_state"]
+
+        # Use multi-head attention layer to find keywords(cls)
+        bsz, total_len = audio_feat.size(0), audio_feat.size(1) + self.keyword_num
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = self.get_keypadding_mask(bsz, total_len, audio_len).to(
+            src.device
+        )
+
+        key_padding_mask = key_padding_mask.bool()
+
+        _, attn_output_weights = self.multihead_attn_layer(
+            src, src, src, key_padding_mask=key_padding_mask, average_attn_weights=False
+        )
+        # (bsz,num_head,target_L,source_L)
+
+        # get [CLS] token attention weights
+        # cls_weights = attn_output_weights[:, 0, 0,:]
+        cls_weights = []
+        for i in range(attn_output_weights.shape[0]):
+            cls_weights.append(
+                attn_output_weights[
+                    i, :, : self.keyword_num, : audio_len[i] + self.keyword_num
+                ]
+            )
+
+        return cls_weights
 
     def forward(
         self,
@@ -627,6 +666,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         self.clip.update_device(self.device)
 
         audio_feat, audio_len = self.forward_audio(wav, wav_len)
+        
         image_feat = self.forward_image(image)
 
         q_loss = None
@@ -636,33 +676,18 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         cls = torch.cat([self.cls] * bsz, dim=0)
         src = torch.cat([cls, audio_feat], dim=1)
 
-        # if self.mutual_atten:
         key_padding_mask = self.get_keypadding_mask(bsz, total_len, audio_len)
         keywords = self.attentionBlock_Norm(
-            self.multihead_attn_layer(
-                src, src, src, key_padding_mask=key_padding_mask
-            )[0]
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
             + src
         )
-        keywords = keywords[:, : self.keyword_num]
-        # else:
-        #     kw_list = []
-        #     for i in range(self.keyword_num):
-        #         key_padding_mask = self.get_keypadding_mask(
-        #             bsz, total_len, audio_len, atten_kw_idx=i
-        #         )
-        #         keyword = self.attentionBlock_Norm(
-        #             self.multihead_attn_layer(
-        #                 src, src, src, key_padding_mask=key_padding_mask
-        #             )[0]
-        #             + src
-        #         )[:, i]
-        #         kw_list.append(keyword)
-        #         del key_padding_mask
-        #     keywords = torch.stack(kw_list, dim=1)
+        keywords = keywords[:, : self.keyword_num].reshape(
+            -1, self.keyword_num, self.embd_dim
+        )
 
-        if self.downsampling_type is None:
-            keywords = self.linear_proj(keywords)
+        keywords = self.linear_proj(keywords)
 
         # audio_feat = keywords
         # audio_feat = audio_feat.squeeze()
@@ -692,6 +717,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             #     loss = vq_result["loss"] * self.beta + cl_loss
             losses = {
                 "cl_loss": cl_loss,
+                "loss": cl_loss,
             }
             # if q_loss is not None:
             #     losses.update({"q_loss": q_loss.detach()})
@@ -720,17 +746,11 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     #         )
 
     def training_step(self, batch, batch_idx):
-        # print("self.cls",self.cls.squeeze()[:10])
-        # if self.cls.squeeze().grad is not None:
-        #     print("self.cls.grad",self.cls.squeeze().grad[:10])
-        # else:
-        #     print("self.cls.grad",None)
-
-        # print("multihead_attn_layer",self.multihead_attn_layer.k_proj_weight.grad == None)
         losses, _, _, _, _ = self.forward(batch, cal_loss=True)
 
         result = {
-            "train_loss": losses["cl_loss"],
+            "train_loss": losses["loss"],
+            "train_cl_loss": losses["cl_loss"],
             "cl_temp": self.criterion.get_temp(),
         }
         self.log_dict(
@@ -741,11 +761,11 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             logger=True,
             sync_dist=True,
         )
-        # self.log("train_cl_loss", losses["cl_loss"])
 
-        return {"loss": losses["cl_loss"]}
+        return {"loss": losses["loss"]}
 
     def validation_step(self, batch, batch_idx):
+        # self.feature_extractor_s3prl(batch["wav"])
         # print(self.cls.squeeze()[:10])
         # exit(1)
         losses, audio_feat, image_feat, id, keywords = self.forward(
@@ -786,51 +806,78 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
                 os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
             )
 
-        gold_texts = []
-        for x in outputs:
-            gold_texts.extend(x["gold_text"])
-        # gold_texts = [ x["gold_text"] for x in outputs]
-        # gold_texts = [ x["gold_text"] for x in gold_texts]
-        all_keyword_embeddings = torch.cat(
-            [x["keywords"] for x in outputs], dim=0
-        ).squeeze()
+        if (
+            hasattr(self, "log_detokenize_results_every_n_epoch")
+            and self.current_epoch % self.log_detokenize_results_every_n_epoch == 0
+        ) or not (hasattr(self, "log_detokenize_results_every_n_epoch")):
+            gold_texts = []
+            for x in outputs:
+                gold_texts.extend(x["gold_text"])
+            # gold_texts = [ x["gold_text"] for x in outputs]
+            # gold_texts = [ x["gold_text"] for x in gold_texts]
+            all_keyword_embeddings = torch.cat([x["keywords"] for x in outputs], dim=0)
+            all_keyword_embeddings = all_keyword_embeddings.view(
+                all_keyword_embeddings.shape[0],
+                self.keyword_num,
+                all_keyword_embeddings.shape[-1],
+            )
 
-        # assert all_keyword_embeddings.dim() == 2, all_keyword_embeddings.shape
-        assert all_keyword_embeddings.shape[-1] == 512, all_keyword_embeddings.shape
-        all_retok_outputs = []
-        K = 10
-        tokenEmbeddings = self.clip.model.token_embedding.weight.detach().cpu()
-        for i in range(len(gold_texts)):
-            retok_output = {"gold": gold_texts[i]}
-            for j in range(self.keyword_num):
+            # all_keyword_embeddings shape (total_audio, num_keywords, hid_dim)
+
+            assert all_keyword_embeddings.dim() == 3, all_keyword_embeddings.shape
+            assert (
+                all_keyword_embeddings.shape[2] == self.text_embd_dim
+            ), all_keyword_embeddings.shape
+            all_retok_outputs = []
+            K = self.config.keyword.detokenized_K_neighbors
+            tokenEmbeddings = self.clip.model.token_embedding.weight.detach().cpu()
+            for i in range(len(gold_texts)):
                 _k_values, _k_indices = torch.topk(
-                    F.cosine_similarity(all_keyword_embeddings[i, j], tokenEmbeddings),
+                    F.cosine_similarity(
+                        all_keyword_embeddings[i].view(
+                            self.keyword_num, self.text_embd_dim, 1
+                        ),
+                        tokenEmbeddings.transpose(0, 1).unsqueeze(0),
+                        dim=1,
+                    ),
                     K,
                 )
-                tmp_outputs = []
-                for _ind, _dist in zip(_k_indices, _k_values):
-                    tmp_outputs.append(
-                        [
-                            self.clip.tokenizer.decoder[
-                                # self.clip.reducedl2Original[_ind.item()]
-                                _ind.item()
-                            ],
-                            _dist.item(),
-                        ]
-                    )
-                retok_output[f"neighbors_of_keyword{j+1}"] = tmp_outputs
-            all_retok_outputs.append(retok_output)
+                assert _k_values.shape == (self.keyword_num, K)
 
-        with open(
-            os.path.join(
-                self.logger.log_dir,
-                "retokenizeText/",
-                "keywords_ep{}.json".format(self.current_epoch),
-            ),
-            "w",
-        ) as f:
-            json.dump(all_retok_outputs, f)
-        del all_retok_outputs
+                tmp_outputs = {}
+                for _keyword_i in range(self.keyword_num):
+                    tmp_outputs["keyword_{}".format(_keyword_i)] = []
+                    for _ind, _dist in zip(
+                        _k_indices[_keyword_i], _k_values[_keyword_i]
+                    ):
+                        tmp_outputs["keyword_{}".format(_keyword_i)].append(
+                            [
+                                self.clip.tokenizer.decoder[
+                                    self.clip.reducedl2Original[_ind.item()]
+                                    if self.clip.selected_text_emb_ids is not None
+                                    else _ind.item()
+                                ],
+                                _dist.item(),
+                            ]
+                        )
+
+                all_retok_outputs.append(
+                    {
+                        "gold": gold_texts[i],
+                        "neighbors": tmp_outputs,
+                    }
+                )
+
+            with open(
+                os.path.join(
+                    self.logger.log_dir,
+                    "retokenizeText/",
+                    "keywords_ep{}.json".format(self.current_epoch),
+                ),
+                "w",
+            ) as f:
+                json.dump(all_retok_outputs, f)
+            del all_retok_outputs
 
         all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
@@ -871,6 +918,307 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
         optimizers = []
         schedulers = []
         audio_params = []
+
+        if self.feat_select_idx == "all":
+            logging.warning("add self.audio_encoder_layer_weights to optimizer")
+            audio_params = audio_params + [self.audio_encoder_layer_weights]
+
+        if self.config.audio_encoder.trainable:
+            audio_params = audio_params + list(self.audio_encoder.parameters())
+
+        if self.downsampling_type is not None:
+            audio_params = audio_params + list(self.downsampling.parameters())
+
+        audio_params = audio_params + list(self.multihead_attn_layer.parameters())
+        audio_params = audio_params + list(self.linear_proj.parameters())
+
+        audio_params = (
+            audio_params + [self.cls] + list(self.attentionBlock_Norm.parameters())
+        )
+
+        audio_params = audio_params + list(self.criterion.parameters())
+
+        # audio_optimizer = torch.optim.Adam( audio_params, lr=1e-1)
+
+        audio_optimizer = getattr(torch.optim, self.config.audio_encoder.optim.name)(
+            audio_params,
+            **self.config.audio_encoder.optim.args,
+        )
+        audio_scheduler = get_scheduler(
+            optimizer=audio_optimizer,
+            **self.config.audio_encoder.scheduler,
+        )
+        optimizers.append(audio_optimizer)
+        schedulers.append(
+            {
+                "scheduler": audio_scheduler,
+                "interval": "step",
+            }
+        )
+
+        if self.config.clip.image_encoder_trainable:
+            assert False
+            image_optimizer = getattr(torch.optim, self.config.clip.image_optim.name)(
+                self.clip.model.visual.parameters(),
+                **self.config.clip.image_optim.args,
+            )
+            image_scheduler = get_scheduler(
+                optimizer=image_optimizer,
+                **self.config.clip.scheduler,
+            )
+            optimizers.append(image_optimizer)
+            schedulers.append(
+                {
+                    "scheduler": image_scheduler,
+                    "interval": "step",
+                }
+            )
+
+        return optimizers, schedulers
+
+
+class KeywordCascadedSpeechClip_CodeBookPenalty(KeywordCascadedSpeechClip):
+    def __init__(self, config: OrderedNamespace):
+        super().__init__(config)
+        self.codebook_penalty_type = config.codebook_penalty.type
+        logging.warning("Using Penalty Scheduler")
+        self.penalty_scheduler = PenaltyScheduler(
+            weights=config.codebook_penalty.loss_weight,
+            keypoints=config.codebook_penalty.keypoints,
+        )
+
+        assert self.codebook_penalty_type in [
+            "cosine",
+            "l2",
+        ], self.codebook_penalty_type
+
+    def feature_extractor_s3prl(self, wav, include_last_attention=True):
+        wav_len = [len(x) for x in wav]
+        audio_feat, audio_len = self.audio_encoder(wav, wav_len, feat_select_idx="all")
+        hidden_states = audio_feat["hidden_states"]
+        audio_feat = audio_feat["last_hidden_state"]
+
+        if not include_last_attention:
+            return audio_feat, hidden_states[:]
+        # Use multi-head attention layer to find keywords(cls)
+        bsz = audio_feat.size(0)
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = torch.ones([bsz, audio_feat.size(1) + self.keyword_num])
+        for mask, _len in zip(key_padding_mask, audio_len):
+            _len += self.keyword_num  # add cls
+            mask[:_len] = torch.zeros(mask[:_len].size())
+
+        key_padding_mask = key_padding_mask.bool().to(src.device)
+
+        keywords = self.attentionBlock_Norm(
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
+            + src
+        )
+        hidden_states = hidden_states + tuple([keywords[:, self.keyword_num :, :]])
+
+        return audio_feat, hidden_states[:]
+
+    def forward(
+        self,
+        batch,
+        cal_loss: bool = False,
+    ):
+
+        wav = batch["wav"]
+        wav_len = batch["wav_len"]
+        image = batch["image"]
+        id = batch["id"]
+        id = torch.cat(id, dim=0)
+
+        # update device information to clip model
+        self.clip.update_device(self.device)
+
+        audio_feat, audio_len = self.forward_audio(wav, wav_len)
+        image_feat = self.forward_image(image)
+
+        q_loss = None
+
+        # Use multi-head attention layer to find keywords(cls)
+        bsz, total_len = audio_feat.size(0), audio_feat.size(1) + self.keyword_num
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = self.get_keypadding_mask(bsz, total_len, audio_len)
+        keywords = self.attentionBlock_Norm(
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
+            + src
+        )
+        keywords = keywords[:, : self.keyword_num].reshape(
+            -1, self.keyword_num, self.embd_dim
+        )
+
+        keywords = self.linear_proj(keywords)
+
+        # keywords bsz, keyword_num, embd_dim
+
+        assert self.clip.model.token_embedding.weight.requires_grad == False
+        # add penalty
+        if self.codebook_penalty_type == "cosine":
+            # cosine
+            cos_score = F.cosine_similarity(
+                keywords.view(-1, self.text_embd_dim, 1),
+                self.clip.model.token_embedding.weight.transpose(0, 1).unsqueeze(0),
+                dim=1,
+            ).max(-1)[0]
+            codebook_penalty_loss = (1 - cos_score).mean()
+            # print(codebook_penalty_loss)
+            # exit(1)
+        elif self.codebook_penalty_type == "l2":
+            pass
+            # l2_dists = F.mse_loss(
+            #     keywords.view(bsz,self.text_embd_dim,1),
+            #     self.clip.model.token_embedding.weight.transpose(0,1).unsqueeze(0),
+            #     dim=1
+            # ).max(-1)[0]
+            # cosine_loss = 1 - cos_score
+
+        # audio_feat = keywords
+        # audio_feat = audio_feat.squeeze()
+
+        # # Feed keyword into clip text encoder
+        audio_feat, res = self.clip.encode_keywords(keywords, self.keyword_num)
+
+        if cal_loss:
+            audio_feat = audio_feat / audio_feat.norm(dim=-1, keepdim=True)
+            image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
+
+            assert audio_feat.shape == image_feat.shape, "{} {}".format(
+                audio_feat.shape, image_feat.shape
+            )
+
+            assert audio_feat.shape[0] == id.shape[0]
+
+            cl_loss = self.criterion(
+                features=torch.stack([audio_feat, image_feat], dim=1),
+                labels=id,
+            )
+            # if q_loss is not None:
+            #     loss = (
+            #         vq_result["loss"] * self.beta + cl_loss + self.cif_lamda_c * q_loss
+            #     )
+            # else:
+            #     loss = vq_result["loss"] * self.beta + cl_loss
+            loss = cl_loss + self.penalty_scheduler.get_value() * codebook_penalty_loss
+            losses = {
+                "cbk_pen_loss": codebook_penalty_loss,
+                "cl_loss": cl_loss,
+                "loss": loss,
+            }
+            # if q_loss is not None:
+            #     losses.update({"q_loss": q_loss.detach()})
+
+            return losses, audio_feat, image_feat, id, keywords
+
+        return audio_feat, image_feat, res, id
+
+    # def on_before_optimizer_step(self, optimizer, optimizer_idx):
+    #     print("type of grad",type(self.cls.grad))
+    #     print("type of cls",type(self.cls.data))
+    #     print(self.cls.data.mean())
+    #     print(self.cls.grad.norm())
+    #     pass
+    # print("self.cls",self.multihead_attn_layer.in_proj_weight.flatten()[0])
+    # if self.multihead_attn_layer.in_proj_weight.grad is not None:
+    #     print("self.cls.grad",self.multihead_attn_layer.in_proj_weight.grad.flatten()[0])
+    # else:
+    #     print("self.cls.grad",None)
+
+    # print("self.linear_proj",self.linear_proj.weight.flatten()[0])
+    # if self.linear_proj.weight.grad is not None:
+    #     print("self.linear_proj.grad",self.linear_proj.weight.grad.flatten()[0])
+    # else:
+    #     print("self.linear_proj.grad",None)
+    # if self.trainer.global_step % 25 == 0:  # don't make the tf file huge
+    #     for k, v in self.named_parameters():
+    #         self.logger.experiment.add_histogram(
+    #             tag=k, values=v.grad, global_step=self.trainer.global_step
+    #         )
+
+    def training_step(self, batch, batch_idx):
+        # print("self.cls",self.cls.squeeze()[:10])
+        # if self.cls.squeeze().grad is not None:
+        #     print("self.cls.grad",self.cls.squeeze().grad[:10])
+        # else:
+        #     print("self.cls.grad",None)
+
+        # print("multihead_attn_layer",self.multihead_attn_layer.k_proj_weight.grad == None)
+        losses, _, _, _, _ = self.forward(batch, cal_loss=True)
+        result = {
+            "train_loss": losses["loss"],
+            "train_cl_loss": losses["cl_loss"],
+            "train_cbk_pen_loss": losses["cbk_pen_loss"],
+            "cl_temp": self.criterion.get_temp(),
+            "penalty_weight": self.penalty_scheduler.get_value(),
+        }
+        self.log_dict(
+            result,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+        # self.log("train_cl_loss", losses["cl_loss"])
+
+        return {"loss": losses["loss"]}
+
+    def validation_step(self, batch, batch_idx):
+        # self.feature_extractor_s3prl(batch["wav"])
+        # print(self.cls.squeeze()[:10])
+        # exit(1)
+        losses, audio_feat, image_feat, id, keywords = self.forward(
+            batch, cal_loss=True
+        )
+
+        audio_feat = audio_feat.detach().cpu()
+        image_feat = image_feat.detach().cpu()
+        keywords = keywords.detach().cpu().squeeze()
+        id = id.detach().cpu()
+
+        result = {
+            "val_loss": losses["loss"].item(),
+            "val_cl_loss": losses["cl_loss"],
+            "val_cbk_pen_loss": losses["cbk_pen_loss"],
+        }
+
+        self.log_dict(
+            result,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+
+        return {
+            "id": id,
+            "audio_feat": audio_feat,
+            "image_feat": image_feat,
+            "keywords": keywords,
+            # "vq_targets": res["targets"].squeeze(),
+            "gold_text": batch["text"],
+            # "detok_text": detok_text,
+        }
+
+    def configure_optimizers(self):
+        optimizers = []
+        schedulers = []
+        audio_params = []
+
+        if self.feat_select_idx == "all":
+            logging.warning("add self.audio_encoder_layer_weights to optimizer")
+            audio_params = audio_params + [self.audio_encoder_layer_weights]
 
         if self.config.audio_encoder.trainable:
             audio_params = audio_params + list(self.audio_encoder.parameters())
@@ -933,6 +1281,7 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
         self.multihead_attn_layer = nn.MultiheadAttention(
             self.embd_dim, num_heads=1, dropout=0.1, batch_first=True
         )
+        self.attentionBlock_Norm = nn.LayerNorm(self.embd_dim, eps=1e-5)
         self.keyword_num = 1
         self.downsampling_type = None
 
@@ -940,7 +1289,7 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
             num_embeddings=self.keyword_num, embedding_dim=self.audio_encoder.out_dim
         )
 
-        self.projection_network = nn.Sequential(
+        self.linear_proj = nn.Sequential(
             # torch.nn.Linear(self.audio_encoder.out_dim,self.audio_encoder.out_dim),
             # torch.nn.GELU(),
             # torch.nn.Linear(self.audio_encoder.out_dim,self.audio_encoder.out_dim),
@@ -995,13 +1344,26 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
 
         # Use multi-head attention layer to find keywords(cls)
         bsz = audio_feat.size(0)
+        self.cls_embeddings.weight
+        cls = torch.stack([self.cls_embeddings.weight] * bsz, dim=0)
+        assert cls.shape == (bsz, self.keyword_num, audio_feat.shape[2]), cls.shape
 
-        # cls = torch.cat([self.cls] * bsz, dim=0)
-        cls = self.cls_embeddings.weight[0].view(1, 1, -1).repeat(bsz, 1, 1)
         src = torch.cat([cls, audio_feat], dim=1)
-        keywords = (self.multihead_attn_layer(src, src, src)[0])[:, : self.keyword_num]
 
-        keywords = self.projection_network(keywords)
+        key_padding_mask = torch.ones([bsz, audio_feat.size(1) + self.keyword_num])
+        for mask, len in zip(key_padding_mask, audio_len):
+            len += self.keyword_num  # add cls
+            mask[:len] = torch.zeros(mask[:len].size())
+        key_padding_mask = key_padding_mask.bool().to(self.device)
+
+        keywords = self.attentionBlock_Norm(
+            self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                0
+            ]
+            + src
+        )
+        keywords = keywords[:, : self.keyword_num]
+        keywords = self.linear_proj(keywords)
 
         # VQ
         vq_results = self.vector_quantizer(x=keywords)
@@ -1043,7 +1405,8 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
 
         result = {
             "train_loss": losses["cl_loss"],
-            "temp": vq_results["temp"],
+            "cl_temp": self.criterion.get_temp(),
+            "softmax_temp": vq_results["temp"],
             "train_prob_ppl": vq_results["prob_perplexity"].item(),
             "train_code_ppl": vq_results["code_perplexity"].item(),
         }
@@ -1095,94 +1458,6 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
             # "detok_text": detok_text,
         }
 
-    def validation_epoch_end(self, outputs):
-        if not os.path.exists(os.path.join(self.logger.log_dir, "retokenizeText")):
-            os.makedirs(
-                os.path.join(self.logger.log_dir, "retokenizeText"), exist_ok=True
-            )
-
-        gold_texts = []
-        for x in outputs:
-            gold_texts.extend(x["gold_text"])
-        # gold_texts = [ x["gold_text"] for x in outputs]
-        # gold_texts = [ x["gold_text"] for x in gold_texts]
-        all_keyword_embeddings = torch.cat(
-            [x["keywords"] for x in outputs], dim=0
-        ).squeeze()
-
-        assert all_keyword_embeddings.dim() == 2, all_keyword_embeddings.shape
-        assert all_keyword_embeddings.shape[1] == 512, all_keyword_embeddings.shape
-        all_retok_outputs = []
-        K = 10
-        tokenEmbeddings = self.clip.model.token_embedding.weight.detach().cpu()
-        for i in range(len(gold_texts)):
-            _k_values, _k_indices = torch.topk(
-                F.cosine_similarity(all_keyword_embeddings[i], tokenEmbeddings), K
-            )
-            tmp_outputs = []
-            for _ind, _dist in zip(_k_indices, _k_values):
-                tmp_outputs.append(
-                    [
-                        self.clip.tokenizer.decoder[
-                            self.clip.reducedl2Original[_ind.item()]
-                            # _ind.item()
-                        ],
-                        _dist.item(),
-                    ]
-                )
-            all_retok_outputs.append(
-                {
-                    "gold": gold_texts[i],
-                    "neighbors": tmp_outputs,
-                }
-            )
-
-        with open(
-            os.path.join(
-                self.logger.log_dir,
-                "retokenizeText/",
-                "keywords_ep{}.json".format(self.current_epoch),
-            ),
-            "w",
-        ) as f:
-            json.dump(all_retok_outputs, f)
-        del all_retok_outputs
-
-        all_ids = torch.cat([x["id"] for x in outputs], dim=0)
-        all_imgs = torch.cat([x["image_feat"] for x in outputs], dim=0)
-        id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_imgs)}
-
-        del all_imgs
-
-        all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
-        all_audo_feats_id = all_ids
-
-        all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
-        all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
-
-        print(
-            "Total #{} images, #{} audio".format(
-                len(all_img_feats), len(all_audo_feats)
-            )
-        )
-
-        # calculate dot product
-        score_per_audio = torch.matmul(
-            all_audo_feats.to(self.device), all_img_feats.T.to(self.device)
-        )
-        score_per_image = score_per_audio.T
-
-        # AI : Audio -> Image, IA: Image -> Audio
-        AI_answers = all_audo_feats_id
-        IA_answers = all_img_feats_id
-
-        self.reportRetrieval(
-            score_per_audio=score_per_audio,
-            score_per_image=score_per_image,
-            AI_answers=AI_answers,
-            IA_answers=IA_answers,
-        )
-
     def configure_optimizers(self):
         optimizers = []
         schedulers = []
@@ -1191,11 +1466,22 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
         if self.config.audio_encoder.trainable:
             audio_params = list(self.audio_encoder.parameters())
 
-        audio_params = audio_params + list(self.cls_embeddings.parameters())
-        audio_params = audio_params + list(self.vector_quantizer.parameters())
+        if self.config.audio_encoder.trainable:
+            audio_params = audio_params + list(self.audio_encoder.parameters())
+
+        if self.downsampling_type is not None:
+            audio_params = audio_params + list(self.downsampling.parameters())
 
         audio_params = audio_params + list(self.multihead_attn_layer.parameters())
-        audio_params = audio_params + list(self.projection_network.parameters())
+        audio_params = audio_params + list(self.linear_proj.parameters())
+
+        audio_params = audio_params + list(self.attentionBlock_Norm.parameters())
+
+        audio_params = audio_params + list(self.cls_embeddings.parameters())
+
+        audio_params = audio_params + list(self.criterion.parameters())
+
+        audio_params = audio_params + list(self.vector_quantizer.parameters())
 
         audio_optimizer = getattr(torch.optim, self.config.audio_encoder.optim.name)(
             audio_params,
@@ -1231,6 +1517,13 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClip):
             )
 
         return optimizers, schedulers
+
+    def on_before_optimizer_step(self, optimizer, optimizer_idx):
+        print("self.cls_embeddings", self.cls_embeddings.weight.flatten()[0])
+        if self.cls_embeddings.weight.grad is not None:
+            print("self.cls.grad", self.cls_embeddings.weight.grad.flatten()[0])
+        else:
+            print("self.cls.grad", None)
 
 
 class KeywordCascadedSpeechClip_ProjVQ_Cosine(KeywordCascadedSpeechClip_ProjVQ):

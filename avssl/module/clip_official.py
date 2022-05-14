@@ -1,4 +1,5 @@
 import logging
+import os
 import pickle
 import string
 
@@ -58,6 +59,12 @@ class ClipModel(nn.Module):
 
         self.selected_text_emb_ids = None
         if reduce_subword_embbedding is not None:
+            if not os.path.exists(reduce_subword_embbedding):
+                reduce_subword_embbedding = os.path.join(
+                    "/work/twsezjg982/atosytem/audio-visual-ssl/",
+                    reduce_subword_embbedding,
+                )
+
             _data = np.load(reduce_subword_embbedding)
             self.selected_text_emb_ids = _data[:, 0]
             self.selected_text_emb_ids_dist = _data[:, 1]

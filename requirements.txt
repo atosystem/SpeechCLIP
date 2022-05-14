@@ -1,6 +1,6 @@
 ftfy
 git+https://github.com/openai/CLIP.git
 pytest
-pytorch_lightning
+pytorch_lightning==1.5.10
 omegaconf==2.1.1
 jiwer

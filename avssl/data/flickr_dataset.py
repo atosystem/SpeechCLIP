@@ -181,9 +181,11 @@ class FlickrDataset(BaseDataset):
                         for p in wav_names_to_paths[image_name]:
                             _entry = {"id": filename2Id[image_name]}
 
-                            if "txt" in os.path.basename(p).split("_")[-1].replace(".wav", ""):
+                            if "txt" in os.path.basename(p).split("_")[-1].replace(
+                                ".wav", ""
+                            ):
                                 continue
-                            
+
                             _subID = int(
                                 os.path.basename(p).split("_")[-1].replace(".wav", "")
                             )
