@@ -4,6 +4,7 @@ import math
 import os
 import pickle
 from ast import keyword
+from turtle import forward
 from typing import Tuple, Union
 
 import numpy as np
@@ -108,6 +109,32 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             wav ():
         """
         pass
+
+    def feature_extractor_zerospeech(self, wav, using_keywords=False):
+        wav_len = [len(x) for x in wav]
+        audio_feat, audio_feat_len = self.forward_audio(wav, wav_len)
+        if not using_keywords:
+            return audio_feat
+        else:
+            # Use multi-head attention layer to find keywords(cls)
+            bsz = audio_feat.size(0)
+            cls = torch.cat([self.cls] * bsz, dim=0)
+            src = torch.cat([cls, audio_feat], dim=1)
+
+            key_padding_mask = torch.ones([bsz, audio_feat.size(1) + self.keyword_num])
+            for mask, _len in zip(key_padding_mask, audio_feat_len):
+                _len += self.keyword_num  # add cls
+                mask[:_len] = torch.zeros(mask[:_len].size())
+
+            key_padding_mask = key_padding_mask.bool().to(src.device)
+
+            keywords = self.attentionBlock_Norm(
+                self.multihead_attn_layer(src, src, src, key_padding_mask=key_padding_mask)[
+                    0
+                ]
+                + src
+            )
+            return keywords[:, self.keyword_num :, :]
 
     def forward_audio(
         self,
