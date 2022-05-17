@@ -134,7 +134,7 @@ class CascadedSpeechClip_Base(BaseLightningModel):
                 ]
                 + src
             )
-            return keywords[:, self.keyword_num :, :]
+            return keywords[:,  :self.keyword_num, :]
 
     def forward_audio(
         self,
