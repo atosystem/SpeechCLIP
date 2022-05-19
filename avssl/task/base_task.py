@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from torch.utils.data import DataLoader, random_split
 
 from ..base import OrderedNamespace
-from ..data import FlickrDataset, PlacesImageCaptionDataset, collate_general
+from ..data import FlickrDataset, PlacesImageCaptionDataset, collate_general, CoCoDataset
 
 
 class BaseTask:
@@ -144,6 +144,24 @@ class TrainSpeechClipBaseTask(BaseTask):
                 [tr_len, len(tr_set) - tr_len],
                 generator=torch.Generator().manual_seed(config.seed),
             )
+        elif config.data.dataset.name == "coco":
+            if self.args.train:
+                tr_set = CoCoDataset(
+                    split="train",
+                    load_image=False,
+                    tokenizeText=False,
+                    modalities=["audio", "image", "text"],
+                    **config.data.dataset,
+                )
+            if self.args.train or self.args.eval:
+                dv_set = CoCoDataset(
+                    split="val",
+                    load_image=False,
+                    tokenizeText=False,
+                    modalities=["audio", "image", "text"],
+                    **config.data.dataset,
+                )
+           
         else:
             raise NotImplementedError(f"Unknown dataset {config.data.dataset.name}")
 

@@ -83,7 +83,7 @@ class FlickrDataset(BaseDataset):
         target_sr: int = 16_000,
         load_audio: bool = True,
         load_image: bool = True,
-        wav_rm_silence: bool = False, 
+        wav_rm_silence: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -107,9 +107,9 @@ class FlickrDataset(BaseDataset):
         if wav_rm_silence:
             print("Using wav w/o silence data")
             wav_file = "wavs_with_no_silence"
-        else: 
+        else:
             wav_file = "wavs"
-            
+
         wav_base_path = os.path.join(self.dataset_root, "flickr_audio", wav_file)
         wav_list = os.listdir(wav_base_path)
         wav_names = {p[:-6] for p in wav_list if p.split(".")[-1] == "wav"}
