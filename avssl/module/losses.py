@@ -4,6 +4,7 @@ Date: May 07, 2020
 """
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -35,7 +36,8 @@ class SupConLoss(nn.Module):
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
 
-    def get_temp(self):
+    @property
+    def current_temperature(self):
         if self.learnable_temperature:
             return self.temperature.item()
         else:
@@ -117,5 +119,127 @@ class SupConLoss(nn.Module):
         # loss
         loss = -(1 / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
+
+        return loss
+
+
+MAX_EYE = 240
+
+
+class MaskedContrastiveLoss(nn.Module):
+    def __init__(
+        self,
+        temperature: float = 0.07,
+        temperature_trainable: bool = False,
+        margin: float = 0.0,
+        dcl: bool = False,
+        a2b: bool = True,
+        b2a: bool = True,
+    ):
+        """Masked Contrastive Loss
+
+        Args:
+            temperature (float, optional): Temperature for scaling logits. Defaults to 0.07.
+            temperature_trainable (bool, optional): Trains temperature. Defaults to False.
+            margin (float, optional): Margin. Defaults to 0.0.
+            dcl (bool, optional): Decoupled contrastive learning (https://arxiv.org/abs/2110.06848). Defaults to False.
+            a2b (bool, optional): Computes A to B classification loss. Defaults to True.
+            b2a (bool, optional): Computes B to A classification loss. Defaults to True.
+        """
+
+        super().__init__()
+
+        assert a2b or b2a, "Cannot set both `a2b` and `b2a` to False."
+
+        self.temperature_trainable = temperature_trainable
+        self.margin = margin
+        self.dcl = dcl
+        self.a2b = a2b
+        self.b2a = b2a
+
+        if temperature_trainable:
+            self.temperature = nn.Parameter(torch.ones([]) * np.log(1 / temperature))
+        else:
+            self.temperature = 1 / temperature
+
+        eye_mat = torch.eye(MAX_EYE, dtype=torch.bool)
+        self.register_buffer("eye_mat", eye_mat)
+        self.register_buffer("neg_eye_mat", ~eye_mat)
+        self.register_buffer("eye_mat_fl", eye_mat.type(torch.float))
+
+    @property
+    def current_temperature(self) -> float:
+        """Current Temperature
+
+        Returns:
+            float: Temperature
+        """
+
+        if self.temperature_trainable:
+            temp = self.temperature.data.cpu().detach().float().exp().item()
+        else:
+            temp = self.temperature
+
+        return float(temp)
+
+    def forward(
+        self, feat_A: torch.Tensor, feat_B: torch.Tensor, index: torch.LongTensor = None
+    ) -> torch.Tensor:
+        """Computes loss
+
+        Args:
+            feat_A (torch.Tensor): Features from view A or modality A.
+            feat_B (torch.Tensor): Features from view B or modality B.
+            index (torch.LongTensor, optional): Labels for each sample. Defaults to None.
+
+        Returns:
+            torch.Tensor: Loss.
+        """
+
+        assert feat_A.shape == feat_B.shape, (feat_A.shape, feat_B.shape)
+        B = feat_A.shape[0]
+
+        # Construct masks
+        with torch.no_grad():
+            if index is not None:
+                assert index.shape[0] == feat_A.shape[0], (index.shape, feat_A.shape)
+                index = index.unsqueeze(1)
+                neg_mask = index != index.t()  # (batch, batch)
+            else:
+                neg_mask = self.neg_eye_mat[:B, :B].clone()
+
+            pos_mask = self.eye_mat[:B, :B]
+
+            if not self.dcl:
+                neg_mask[pos_mask] = True
+
+            neg_mask_fl = neg_mask.type(feat_A.dtype)
+
+        if self.temperature_trainable:
+            temperature = torch.exp(self.temperature)
+        else:
+            temperature = self.temperature
+
+        # Compute logits
+        logits = feat_A @ feat_B.t() * temperature
+
+        # Add margin
+        if self.margin > 0.0:
+            logits[pos_mask] -= self.margin
+
+        # Compute losses
+        pos_logits = logits[pos_mask]
+        exp_logits = logits.exp() * neg_mask_fl
+        loss = 0
+        if self.a2b:
+            neg_A2B = torch.log(exp_logits.sum(1))
+            loss_A2B = (-pos_logits + neg_A2B).mean()
+            loss += loss_A2B
+        if self.b2a:
+            neg_B2A = torch.log(exp_logits.sum(0))
+            loss_B2A = (-pos_logits + neg_B2A).mean()
+            loss += loss_B2A
+        if self.a2b and self.b2a:
+            loss = loss / 2
 
         return loss

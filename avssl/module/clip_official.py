@@ -61,7 +61,7 @@ class ClipModel(nn.Module):
         if reduce_subword_embbedding is not None:
             if not os.path.exists(reduce_subword_embbedding):
                 reduce_subword_embbedding = os.path.join(
-                    "/work/twsezjg982/atosytem/audio-visual-ssl/",
+                    f"/work/{os.getlogin()}/atosystem/audio-visual-ssl/",
                     reduce_subword_embbedding,
                 )
 

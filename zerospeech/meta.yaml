@@ -1,0 +1,23 @@
+author: Ian Shih, Hsuan-Fu Wang
+affiliation: NTUSpeechLAB
+description: haha
+open_source: false
+train_set: flicrk8k
+visually_grounded: true
+gpu_budget: 24
+parameters:
+  phonetic:
+    metric: cosine
+      # The metric to use for phonetic evaluation, must be 'euclidean',
+      # 'cosine', 'kl' or 'kl_symmetric'. **WARNING** the 'cosine' metric
+      # here refeers to an angular distance as in the usual ABX evaluation.
+    frame_shift: 0.5
+      # Shift (in s) between two features frames
+  semantic:
+    metric: cosine #euclidean #cosine
+      # The metric to use for semantic evaluation. May be any metric
+      # supported by scipy.spatial.distance.cdist.
+      # https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.cdist.html
+    pooling: mean
+      # The pooling method to use for semantic evaluation, must be 'min',
+      # 'max', 'mean', 'sum', 'last', 'lastlast' or 'off'.

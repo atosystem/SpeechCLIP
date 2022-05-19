@@ -1,12 +1,12 @@
 import logging
-from typing import Tuple, Union
+from typing import List, Tuple, Union
 
 import torch
 from s3prl import hub
 from torch import nn
 
 from ..data import random_crop_max_length
-from ..util import init_weights
+from ..util import freeze_model, init_weights
 
 
 class S3prlSpeechEncoder(nn.Module):
@@ -19,6 +19,7 @@ class S3prlSpeechEncoder(nn.Module):
         feat_select_idx: Union[str, list] = "all",
         layer_drop: Union[str, float] = 0.0,
         max_audio_len: int = -1,
+        reinit_layers: List[int] = [],
         **kwargs,
     ):
         """Speech Encoder with S3PRL (v0.3.1)
@@ -39,6 +40,7 @@ class S3prlSpeechEncoder(nn.Module):
         self.device = device
         self.feat_select_idx = feat_select_idx
         self.max_audio_len = max_audio_len
+        self.reinit_layers = reinit_layers
 
         self.encoder = getattr(hub, name)().to(device)
         if hasattr(self.encoder, "get_downsample_rates"):
@@ -50,8 +52,7 @@ class S3prlSpeechEncoder(nn.Module):
             self.encoder.apply(init_weights)
 
         if not trainable:
-            for param in self.encoder.parameters():
-                param.requires_grad = False
+            freeze_model(self.encoder)
 
         if self.name.startswith("hubert"):
             if (
@@ -65,6 +66,21 @@ class S3prlSpeechEncoder(nn.Module):
             else:
                 raise ValueError(f"layer_drop = {layer_drop} is not supported.")
 
+            if len(reinit_layers) > 0:
+                logging.warning(f"Reinitializing encoder layers {reinit_layers}")
+                assert self.trainable
+                for i, layer in enumerate(self.encoder.model.encoder.layers):
+                    if i in reinit_layers:
+                        layer.apply(init_weights)
+                    else:
+                        freeze_model(layer)
+
+                freeze_model(self.encoder.model.encoder.pos_conv)
+                freeze_model(self.encoder.model.layer_norm)
+                freeze_model(self.encoder.model.feature_extractor)
+                freeze_model(self.encoder.model.post_extract_proj)
+                self.encoder.model.feature_grad_mult = 0
+
         self.out_dim = 0
         with torch.no_grad():
             wav = [torch.randn(16000, dtype=torch.float, device=device)]
@@ -74,6 +90,19 @@ class S3prlSpeechEncoder(nn.Module):
         logging.info(
             f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim} layer_drop = {self.encoder.model.encoder.layerdrop}"
         )
+
+    def trainable_params(self) -> list:
+        if self.trainable and len(self.reinit_layers) == 0:
+            return list(self.parameters())
+        if self.trainable and len(self.reinit_layers) > 0:
+            params = []
+            for i in self.reinit_layers:
+                params += list(self.encoder.model.encoder.layers[i].parameters())
+            if not self.encoder.model.encoder.layer_norm_first:
+                params += list(self.encoder.model.encoder.layer_norm.parameters())
+            return params
+        else:
+            return []
 
     def forward(
         self,

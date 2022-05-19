@@ -13,8 +13,9 @@ log_setting:
 
 codebook_penalty:
   type: cosine
-  loss_weight: [0,    0, 1  ]
-  keypoints  : [0,10000, 10010 ]
+  loss_weight: [0, 1]
+  keypoints  : [0, 10 ]
+  k_neighbors: 20
   save_keypoint: 10000
 
 cl_loss:
@@ -33,8 +34,8 @@ clip:
   reduce_subword_embbedding: ./avssl/data/flickr_stat/text_clip_vocab_usage_byfreq.npy # npy file for the selected embedding ID and its frequency
 
 keyword:
-  attention_heads: 8
-  number: 2
+  attention_heads: 1
+  number: 8
   detokenized_K_neighbors: 10
 
 audio_encoder:

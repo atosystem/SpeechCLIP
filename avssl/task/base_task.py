@@ -107,6 +107,8 @@ class TrainSpeechClipBaseTask(BaseTask):
             model = model_cls(config)
         self.config = config
 
+        config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
+
         if config.data.dataset.name == "flickr":
             if self.args.train:
                 tr_set = FlickrDataset(
@@ -186,7 +188,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             dirpath=config.trainer.default_root_dir,
             filename="{epoch}-{step}-{val_loss:.4f}",
             monitor="val_loss",
-            save_top_k=3,
+            save_top_k=2,
             mode="min",
             every_n_epochs=1,
             save_last=True,

@@ -289,7 +289,8 @@ class SimpleVectorQuantizer(nn.Module):
                 self.temp_type = "fixed"
                 temp = temp.replace("fixed=", "")
                 temp = ast.literal_eval(temp)
-                self.curr_temp = torch.FloatTensor([temp])
+                self.register_buffer("curr_temp", torch.FloatTensor([temp]))
+                # self.curr_temp = torch.FloatTensor([temp])
                 logging.warning("Setting vq temp fixed={}".format(temp))
             else:
                 self.temp_type = "scheduled"

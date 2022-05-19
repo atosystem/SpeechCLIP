@@ -18,8 +18,12 @@ from ..data import (
 from ..model import (
     KeywordCascadedSpeechClip,
     KeywordCascadedSpeechClip_CodeBookPenalty,
+    KeywordCascadedSpeechClip_parallel_baseline,
     KeywordCascadedSpeechClip_ProjVQ,
     KeywordCascadedSpeechClip_ProjVQ_Cosine,
+    KeywordCascadedSpeechClipBN,
+    KeywordCascadedSpeechClipBNEachKw,
+    KeywordCascadedSpeechClipNLayer,
     VQCascadedSpeechClip,
 )
 from .base_task import BaseTask, TrainSpeechClipBaseTask
@@ -94,11 +98,16 @@ class TrainKeywordCascadedSpeechClip(TrainSpeechClipBaseTask):
     def run(self):
         super().run(
             KeywordCascadedSpeechClip,
-            custom_trainer_callbacks=[
-                CheckpointAtStep(
-                    0, prefix="custom", save_at_steps=[2000, 4000, 6000, 8000, 10000]
-                )
-            ],
+        )
+
+
+class TrainKeywordCascadedSpeechClipNLayer(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(
+            KeywordCascadedSpeechClipNLayer,
         )
 
 
@@ -125,9 +134,39 @@ class TrainKeywordCascadedSpeechClip_CodeBookPenalty(TrainSpeechClipBaseTask):
     def run(self):
         super().run(
             KeywordCascadedSpeechClip_CodeBookPenalty,
-            custom_trainer_callbacks=[
-                CheckpointAtStep(
-                    0, prefix="custom", save_at_steps=[2000, 4000, 6000, 8000, 10000]
-                )
-            ],
+            # custom_trainer_callbacks=[
+            #     CheckpointAtStep(
+            #         0, prefix="custom", save_at_steps=[2000, 4000, 6000, 8000, 10000]
+            #     )
+            # ],
+        )
+
+
+class TrainKeywordCascadedSpeechClipBN(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(
+            KeywordCascadedSpeechClipBN,
+        )
+
+
+class TrainKeywordCascadedSpeechClipBNEachKw(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(
+            KeywordCascadedSpeechClipBNEachKw,
+        )
+
+
+class TrainKeywordCascadedSpeechClip_parallel_baseline(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(
+            KeywordCascadedSpeechClip_parallel_baseline,
         )
