@@ -107,7 +107,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             model = model_cls(config)
         self.config = config
 
-        config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
+        #config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
 
         if config.data.dataset.name == "flickr":
             if self.args.train:
@@ -161,7 +161,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
-           
+
         else:
             raise NotImplementedError(f"Unknown dataset {config.data.dataset.name}")
 
@@ -235,7 +235,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         )
 
         if self.args.train:
-            trainer.fit(model, tr_loader, dv_loader, ckpt_path=config.ckpt)
+            trainer.fit(model, tr_loader, dv_loader, ckpt_path=self.args.ckpt)
         if self.args.eval:
             trainer.validate(model, dv_loader, ckpt_path=config.ckpt, verbose=True)
         if self.args.test:

@@ -1,3 +1,4 @@
+import tqdm
 import json
 import logging
 import math
@@ -845,7 +846,7 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
 
         audio_feat = audio_feat.detach().cpu()
         image_feat = image_feat.detach().cpu()
-        keywords = keywords.detach().cpu().squeeze()
+        keywords = keywords.detach().cpu()
         id = id.detach().cpu()
 
         result = {
@@ -993,7 +994,8 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             assert self.config.keyword.retrieve_method in ["cosine", "pseudo_inverse"]
             hit_rate = [0] * self.keyword_num
             # emb_pinv.shape (num of codes, dim)
-            for i in range(len(gold_texts)):
+            print("Detokenizing K={}".format((K)))
+            for i in tqdm.tqdm(range(len(gold_texts))):
                 gold_subword_toks_set = set(self.clip.tokenizer.encode(gold_texts[i]))
 
                 _k_values, _k_indices = torch.topk(
@@ -2893,7 +2895,7 @@ class KeywordCascadedSpeechClip_ProjVQ(KeywordCascadedSpeechClipBN):
 
         audio_feat = audio_feat.detach().cpu()
         image_feat = image_feat.detach().cpu()
-        keywords = keywords.detach().cpu().squeeze()
+        keywords = keywords.detach().cpu()
         id = id.detach().cpu()
 
         result = {

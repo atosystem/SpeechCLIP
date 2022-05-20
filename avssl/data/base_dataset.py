@@ -133,7 +133,7 @@ class BaseDataset(Dataset):
             load_image (bool, optional): load image file to tensor. Defaults to True.
             tokenizeText (bool, optional): tokenize text input with clip tokenizer. Defaults to True.
         """
-        assert split in {"train", "dev", "test"}
+        # assert split in {"train", "dev", "test"}
         self.split = split
 
         self.dataset_root = dataset_root

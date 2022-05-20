@@ -338,7 +338,11 @@ class ClipModel(nn.Module):
         # res["mean_dist"] = torch.mean(nearest_dist, dim=0)
 
         text = torch.zeros([bsz, 77], device=self.device, dtype=int)
-        sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced
+        if self.selected_text_emb_ids is None:
+            sot_token, eot_token = self.tokenizer.encoder["<|startoftext|>"], self.tokenizer.encoder["<|endoftext|>"]
+        else:
+            sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced
+
         text[:, 0] = torch.full(text[:, 0].size(), sot_token, device=self.device)
         text[:, keyword_num + 1] = torch.full(
             text[:, keyword_num + 1].size(), eot_token, device=self.device

@@ -2,14 +2,14 @@ data:
   dataset:
     name: coco
     dataset_root: /home/vjsalt22/dataset/coco/
-  batch_size: 64
-  dev_batch_size: 8
+  batch_size: 32
+  dev_batch_size: 2
   split_ratio: 0.9
 
 log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
   log_detokenize_results_every_n_epoch: 5
-  log_draw_pca_every_n_epoch: 10
+  log_draw_pca_every_n_epoch: 0
 
 vq:
   bn_before_vq : true
@@ -43,7 +43,7 @@ clip:
   name: ViT-B/32
   image_encoder_trainable: false
   text_encoder_trainable: false
-  reduce_subword_embbedding: ./avssl/data/flickr_stat/text_clip_vocab_usage_byfreq.npy # npy file for the selected embedding ID and its frequency
+  reduce_subword_embbedding: ./avssl/data/coco_stat/text_clip_vocab_usage_byfreq.npy # npy file for the selected embedding ID and its frequency
 
 keyword:
   attention_heads: 1
@@ -63,7 +63,7 @@ audio_encoder:
   trainable: true
   feat_select_idx: last_hidden_state #last_hidden_state # all
   layer_drop: 0.0
-  max_audio_len: 102400
+  max_audio_len: 95573 #102400
   reinit_layers: [10, 11]
   optim:
     name: Adam
@@ -72,12 +72,12 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 2500
-    max_step: 25000
+    warmup: 5000
+    max_step: 50000
     final_lr: 1.e-8
 
 trainer:
-  max_steps: 25000
+  max_steps: 50000
   gradient_clip_val: 4
   accumulate_grad_batches: 1
   check_val_every_n_epoch: 1
@@ -88,4 +88,4 @@ trainer:
   num_sanity_val_steps: 0
   # accelerator: dp
   # limit_train_batches: 1
-  # limit_val_batches: 8
+  #limit_val_batches: 8

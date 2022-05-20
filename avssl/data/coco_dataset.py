@@ -51,10 +51,9 @@ class CoCoDataset(BaseDataset):
                     if "audio" in self.modalities:
                         _ent_data["wav"] = os.path.join(self.dataset_root,"SpokenCOCO",_capion["wav"])
                     if "image" in self.modalities:
-                        _ent_data["image"] = os.path.join(self.dataset_root,"mscoco_img",_entry["image"]) ,
+                        _ent_data["image"] = os.path.join(self.dataset_root,"mscoco_img",_entry["image"])
                     if "text" in self.modalities:
                         _ent_data["text"] = _capion["text"]
-
                     self.data.append(_ent_data)
             else:
                 self.data.append(
@@ -63,5 +62,5 @@ class CoCoDataset(BaseDataset):
                         "id": int(_entry["image"].split("_")[-1].replace(".jpg","")),
                     }
                 )
-        
+
         logging.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
