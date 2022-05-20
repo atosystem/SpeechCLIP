@@ -339,7 +339,10 @@ class ClipModel(nn.Module):
 
         text = torch.zeros([bsz, 77], device=self.device, dtype=int)
         if self.selected_text_emb_ids is None:
-            sot_token, eot_token = self.tokenizer.encoder["<|startoftext|>"], self.tokenizer.encoder["<|endoftext|>"]
+            sot_token, eot_token = (
+                self.tokenizer.encoder["<|startoftext|>"],
+                self.tokenizer.encoder["<|endoftext|>"],
+            )
         else:
             sot_token, eot_token = self.startOfTxt_reduced, self.endOfTxt_reduced
 

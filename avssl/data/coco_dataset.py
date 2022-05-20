@@ -7,6 +7,7 @@ from typing import List
 
 from .base_dataset import BaseDataset, BaseImageCaptionDataset
 
+
 class CoCoDataset(BaseDataset):
     def __init__(
         self,
@@ -35,31 +36,39 @@ class CoCoDataset(BaseDataset):
         assert len(modalities) > 0, "Dataset's modalities cannot be none"
         self.modalities = modalities
 
-        assert self.split in ["train","val"]
+        assert self.split in ["train", "val"]
 
-        data_json_path =  os.path.join(self.dataset_root,"SpokenCOCO",f"SpokenCOCO_{self.split}.json")
-        with open(data_json_path,"r") as f:
+        data_json_path = os.path.join(
+            self.dataset_root, "SpokenCOCO", f"SpokenCOCO_{self.split}.json"
+        )
+        with open(data_json_path, "r") as f:
             raw_data = json.load(f)["data"]
 
         for _entry in raw_data:
             if "audio" in self.modalities or "text" in self.modalities:
                 for _capion in _entry["captions"]:
                     _ent_data = {
-                        "id": int(_entry["image"].split("_")[-1].replace(".jpg","")),
+                        "id": int(_entry["image"].split("_")[-1].replace(".jpg", "")),
                     }
 
                     if "audio" in self.modalities:
-                        _ent_data["wav"] = os.path.join(self.dataset_root,"SpokenCOCO",_capion["wav"])
+                        _ent_data["wav"] = os.path.join(
+                            self.dataset_root, "SpokenCOCO", _capion["wav"]
+                        )
                     if "image" in self.modalities:
-                        _ent_data["image"] = os.path.join(self.dataset_root,"mscoco_img",_entry["image"])
+                        _ent_data["image"] = os.path.join(
+                            self.dataset_root, "mscoco_img", _entry["image"]
+                        )
                     if "text" in self.modalities:
                         _ent_data["text"] = _capion["text"]
                     self.data.append(_ent_data)
             else:
                 self.data.append(
                     {
-                        "image": os.path.join(self.dataset_root,"mscoco_img",_entry["image"]) ,
-                        "id": int(_entry["image"].split("_")[-1].replace(".jpg","")),
+                        "image": os.path.join(
+                            self.dataset_root, "mscoco_img", _entry["image"]
+                        ),
+                        "id": int(_entry["image"].split("_")[-1].replace(".jpg", "")),
                     }
                 )
 

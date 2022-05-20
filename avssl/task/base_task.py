@@ -11,7 +11,12 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from torch.utils.data import DataLoader, random_split
 
 from ..base import OrderedNamespace
-from ..data import FlickrDataset, PlacesImageCaptionDataset, collate_general, CoCoDataset
+from ..data import (
+    CoCoDataset,
+    FlickrDataset,
+    PlacesImageCaptionDataset,
+    collate_general,
+)
 
 
 class BaseTask:
@@ -107,7 +112,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             model = model_cls(config)
         self.config = config
 
-        #config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
+        # config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
 
         if config.data.dataset.name == "flickr":
             if self.args.train:
@@ -220,7 +225,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             mode="max",
             every_n_epochs=1,
         )
-
+        config.trainer.limit_val_batches = 8
         trainer = Trainer(
             callbacks=[
                 TQDMProgressBar(),

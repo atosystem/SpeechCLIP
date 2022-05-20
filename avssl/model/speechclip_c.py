@@ -1,4 +1,3 @@
-import tqdm
 import json
 import logging
 import math
@@ -9,6 +8,7 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+import tqdm
 from jiwer import cer, wer
 from torch import nn
 from torch.nn import functional as F
@@ -983,7 +983,6 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
                 self.config.keyword.detokenized_K_neighbors = 10
 
             K = self.config.keyword.detokenized_K_neighbors
-            K = 1
 
             if not hasattr(self.config.keyword, "retrieve_method"):
                 self.config.keyword.retrieve_method = "cosine"
@@ -995,65 +994,105 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
             hit_rate = [0] * self.keyword_num
             # emb_pinv.shape (num of codes, dim)
             print("Detokenizing K={}".format((K)))
-            for i in tqdm.tqdm(range(len(gold_texts))):
-                gold_subword_toks_set = set(self.clip.tokenizer.encode(gold_texts[i]))
+            for i in tqdm.tqdm(
+                range(
+                    0,
+                    len(gold_texts) + self.config.data.dev_batch_size,
+                    self.config.data.dev_batch_size,
+                )
+            ):
+                _gold_texts = gold_texts[i : i + self.config.data.dev_batch_size]
+                _bsz = len(_gold_texts)
+                if len(_gold_texts) == 0:
+                    break
+
+                gold_subword_toks_set = [
+                    set(self.clip.tokenizer.encode(_text)) for _text in _gold_texts
+                ]
+
+                # cosine batch calculation
+                # use cosine similiarity as logits projection
+                # bsz, seq_len, hid_dim = audio_feat.shape
+                # audio_feat = audio_feat.contiguous().view(-1, hid_dim)
+                # cos_score = []
+                # for i in range(0, audio_feat.shape[0], 64):
+                #     _audio_feat = audio_feat[i : i + 64, :].view(-1, hid_dim)
+                #     _cos_score = F.cosine_similarity(
+                #         _audio_feat.unsqueeze(-1),
+                #         self.clip.model.token_embedding.weight.data.T.unsqueeze(0),
+                #         dim=1,
+                #     )
+                #     del _audio_feat
+                #     cos_score.append(_cos_score)
+                #     del _cos_score
+
+                # cos_score = torch.cat(cos_score, dim=0)
+                # cos_score = cos_score.view(
+                #     bsz, seq_len, self.clip.model.token_embedding.weight.data.size(0)
+                # )
 
                 _k_values, _k_indices = torch.topk(
                     (
                         emb_pinv.float()
-                        @ all_keyword_embeddings[i]
+                        @ all_keyword_embeddings[i : i + _bsz]
+                        .view(-1, self.text_embd_dim)
                         .float()
-                        .reshape(self.keyword_num, self.text_embd_dim)
+                        .reshape(-1, self.text_embd_dim)
                         .permute(1, 0)
                     ).permute(1, 0)
                     if self.config.keyword.retrieve_method == "pseudo_inverse"
                     else F.cosine_similarity(
-                        all_keyword_embeddings[i].view(
-                            self.keyword_num, self.text_embd_dim, 1
+                        all_keyword_embeddings[i : i + _bsz].view(
+                            -1, self.text_embd_dim, 1
                         ),
                         tokenEmbeddings.transpose(0, 1).unsqueeze(0),
                         dim=1,
                     ),
                     K,
                 )
-                assert _k_values.shape == (self.keyword_num, K)
+                assert _k_values.shape == (_bsz * self.keyword_num, K), _k_values.shape
+                _k_indices = _k_indices.view(_bsz, self.keyword_num, K)
+                _k_values = _k_values.view(_bsz, self.keyword_num, K)
 
-                tmp_outputs = {}
-                for _keyword_i in range(self.keyword_num):
-                    tmp_outputs["keyword_{}".format(_keyword_i)] = []
+                batch_tmp_outputs = []
+                for x in range(_bsz):
 
-                    # check if nearest K subword appears in gold text
-                    top_k_toks = set(
-                        [
-                            self.clip.reducedl2Original[_ind.item()]
-                            if self.clip.selected_text_emb_ids is not None
-                            else _ind.item()
-                            for _ind in _k_indices[_keyword_i]
-                        ]
-                    )
-                    if bool(top_k_toks & gold_subword_toks_set):
-                        hit_rate[_keyword_i] += 1
+                    tmp_outputs = {}
+                    for _keyword_i in range(self.keyword_num):
+                        tmp_outputs["keyword_{}".format(_keyword_i)] = []
 
-                    for _ind, _dist in zip(
-                        _k_indices[_keyword_i], _k_values[_keyword_i]
-                    ):
-                        tmp_outputs["keyword_{}".format(_keyword_i)].append(
+                        # check if nearest K subword appears in gold text
+                        top_k_toks = set(
                             [
-                                self.clip.tokenizer.decoder[
-                                    self.clip.reducedl2Original[_ind.item()]
-                                    if self.clip.selected_text_emb_ids is not None
-                                    else _ind.item()
-                                ],
-                                _dist.item(),
+                                self.clip.reducedl2Original[_ind.item()]
+                                if self.clip.selected_text_emb_ids is not None
+                                else _ind.item()
+                                for _ind in _k_indices[x, _keyword_i]
                             ]
                         )
+                        if bool(top_k_toks & gold_subword_toks_set[x]):
+                            hit_rate[_keyword_i] += 1
 
-                all_retok_outputs.append(
-                    {
-                        "gold": gold_texts[i],
-                        "neighbors": tmp_outputs,
-                    }
-                )
+                        for _ind, _dist in zip(
+                            _k_indices[x, _keyword_i], _k_values[x, _keyword_i]
+                        ):
+                            tmp_outputs["keyword_{}".format(_keyword_i)].append(
+                                [
+                                    self.clip.tokenizer.decoder[
+                                        self.clip.reducedl2Original[_ind.item()]
+                                        if self.clip.selected_text_emb_ids is not None
+                                        else _ind.item()
+                                    ],
+                                    _dist.item(),
+                                ]
+                            )
+
+                    all_retok_outputs.append(
+                        {
+                            "gold": gold_texts[i],
+                            "neighbors": tmp_outputs,
+                        }
+                    )
 
             hit_rate = torch.FloatTensor(hit_rate)
             hit_rate = hit_rate / len(gold_texts) * 100
