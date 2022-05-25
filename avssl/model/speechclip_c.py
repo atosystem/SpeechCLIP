@@ -665,6 +665,8 @@ class KeywordCascadedSpeechClip(CascadedSpeechClip_Base):
     def get_keypadding_mask(
         self, bsz: int, length: int, audio_len: torch.Tensor
     ) -> torch.Tensor:
+        for i in range(audio_len.size(-1)):
+            audio_len[i] += self.keyword_num
         key_padding_mask = torch.ones([bsz, length])
         for mask, len in zip(key_padding_mask, audio_len):
             mask[:len] = 0.0
