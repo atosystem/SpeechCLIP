@@ -222,9 +222,9 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             elif self.feat_select_idx in range(len(output["hidden_states"])):
                 audio_feat = output["hidden_states"][self.feat_select_idx]
             elif self.feat_select_idx == "last_hidden_state":
-                audio_feat = output["self.feat_select_idx"]
+                audio_feat = output[f"{self.feat_select_idx}"]
             else:
-                raise KeyError(feat_select_idx)
+                raise KeyError(self.feat_select_idx)
         else:
             audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
 
