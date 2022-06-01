@@ -22,8 +22,10 @@ class SLUE_SA_Dataset(BaseDataset):
 
         assert len(modalities) > 0, "Dataset's modalities cannot be none"
         self.modalities = modalities
-            
-        split_tsv_path = os.path.join(self.dataset_root, f"slue-voxceleb_{self.split}.tsv")
+
+        split_tsv_path = os.path.join(
+            self.dataset_root, f"slue-voxceleb_{self.split}.tsv"
+        )
 
         with open(split_tsv_path, "r") as f:
             for _l in f.readlines():

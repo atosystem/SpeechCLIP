@@ -9,15 +9,15 @@ data:
 
 log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
-  log_detokenize_results_every_n_epoch: 5
-  log_draw_pca_every_n_epoch: 10
+  log_detokenize_results_every_n_epoch: 2
+  log_draw_pca_every_n_epoch: 0
 
 vq:
   bn_before_vq : true
   activation: gelu # relu or gelu
   type: SimpleVectorQuantizer # which type of quantizer to use, gumbel or kmeans
   args:
-    temp: fixed=1 #[2.0, 0.5, 0.999995]
+    temp: fixed=0.1 #[2.0, 0.5, 0.999995]
     time_first: true
     use_gumbel: false
     hard: true
@@ -48,7 +48,7 @@ clip:
 
 keyword:
   attention_heads: 1
-  number: 16
+  number: 8
   detokenized_K_neighbors: 10
   retrieve_method: cosine # cosine or pseudo_inverse
   batchnorms:
@@ -83,10 +83,11 @@ trainer:
   accumulate_grad_batches: 1
   check_val_every_n_epoch: 1
   precision: 16
-  logger: true
+  logger: true # set true to use tensorboard, set to `wandb` to use wandB
   log_every_n_steps: 8
   default_root_dir: exp/sc_c/kw4
   num_sanity_val_steps: 0
+  strategy: ddp
   # accelerator: dp
   # limit_train_batches: 1
   # limit_val_batches: 8

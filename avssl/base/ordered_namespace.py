@@ -151,4 +151,3 @@ class OrderedNamespace(object):
 
     def __delitem__(self, key, dict_delitem=dict.__delitem__):
         self._odict.__delitem__(key, dict_delitem=dict.__delitem__)
-        

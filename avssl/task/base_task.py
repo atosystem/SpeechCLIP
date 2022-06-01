@@ -191,7 +191,9 @@ class TrainSpeechClipBaseTask(BaseTask):
             every_n_epochs=1,
         )
 
-        config.trainer.logger = set_pl_logger(config)
+        # config.trainer.logger = set_pl_logger(config)
+
+        config.trainer.logger = True
 
         trainer = Trainer(
             callbacks=[
@@ -214,8 +216,8 @@ class TrainSpeechClipBaseTask(BaseTask):
         #         *custom_trainer_callbacks,
         #     ],
         #     enable_progress_bar=True,
-        #     accelerator="gpu", 
-        #     devices=2, 
+        #     accelerator="gpu",
+        #     devices=2,
         #     strategy="dp",
         #     resume_from_checkpoint=None if self.args.resume == "" else self.args.resume,
         #     **config.trainer,

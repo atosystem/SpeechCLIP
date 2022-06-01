@@ -79,7 +79,9 @@ forced_alignment_fps = [
 ]
 
 
-def draw_plot(waveform, attention_weights, alignment_data, output_image_path,top1_kw_text=None):
+def draw_plot(
+    waveform, attention_weights, alignment_data, output_image_path, top1_kw_text=None
+):
     # attention_weights:  num_heads, keyword_num, src_len (audio_len)
     n_heads = attention_weights.shape[0]
     n_keywords = attention_weights.shape[1]

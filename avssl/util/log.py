@@ -41,7 +41,9 @@ def set_pl_logger(args: OrderedNamespace) -> Union[bool, LightningLoggerBase]:
     elif logger_type == "wandb":
         project = args.logger.project
         name = args.trainer.default_root_dir.split("/")[-1]
-        logger = WandbLogger(project=project, name=name,save_dir=args.trainer.default_root_dir)
+        logger = WandbLogger(
+            project=project, name=name, save_dir=args.trainer.default_root_dir
+        )
         return logger
     else:
         raise NotImplementedError(f"Unknown logger type = {logger_type}")
