@@ -17,7 +17,7 @@ def parseArgs(argv):
     parser = argparse.ArgumentParser(description='Export BERT features from quantized units of audio files.')
     parser.add_argument("--model_cls_name",type=str)
     parser.add_argument("--model_ckpt",type=str)
-    parser.add_argument("--task_input_dir",type=str,default="/work/{}/dataset/zerospeech2021/semantic/".format(os.getlogin()))
+    parser.add_argument("--task_input_dir",type=str,default="/work/{}/dataset/zerospeech2021/semantic/".format(os.environ.get("USER")))
     parser.add_argument("--task_name",type=str,default="semantic")
     parser.add_argument("--output_result_dir",type=str)
     parser.add_argument(

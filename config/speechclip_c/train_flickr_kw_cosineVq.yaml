@@ -61,11 +61,11 @@ audio_encoder:
   type: s3prl
   name: hubert
   pretrained: true
-  trainable: true
-  feat_select_idx: last_hidden_state #last_hidden_state # all
+  trainable: false
+  feat_select_idx: all #last_hidden_state # all
   layer_drop: 0.0
   max_audio_len: 102400
-  reinit_layers: [10, 11]
+  # reinit_layers: [10, 11]
   optim:
     name: Adam
     args:

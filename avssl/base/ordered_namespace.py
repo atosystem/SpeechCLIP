@@ -146,5 +146,9 @@ class OrderedNamespace(object):
     def copy(self):
         return self.__class__(self)
 
+    def get(self, key, value=None):
+        return self._odict.get(key, value)
+
     def __delitem__(self, key, dict_delitem=dict.__delitem__):
         self._odict.__delitem__(key, dict_delitem=dict.__delitem__)
+        

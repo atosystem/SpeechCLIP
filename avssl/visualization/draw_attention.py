@@ -5,7 +5,7 @@ import librosa
 import torch
 from matplotlib import pyplot as plt
 
-from ..model import KeywordCascadedSpeechClip
+from ..model import KeywordCascadedSpeechClip, KeywordCascadedSpeechClip_ProjVQ_Cosine
 
 
 class WordSegment:
@@ -34,9 +34,17 @@ def loadAudio(path):
 # )
 
 
-mymodel = KeywordCascadedSpeechClip.load_from_checkpoint(
-    "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_8kw_1head/epoch=29-step=9390-val_recall_mean_1=30.7600.ckpt"
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_eachbn_scale_1.0_cosineVq_heads_1_keyword_8/epoch=161-step=2591-val_recall_mean_1=5.2600.ckpt"
+# )
+
+mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+    "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_eachbn_scale_1.0_cosineVq_heads_1_keyword_8_bsz_64_weightedSum/epoch=48-step=22931-val_recall_mean_1=6.1000.ckpt"
 )
+
+# mymodel = KeywordCascadedSpeechClip.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_8kw_1head/epoch=29-step=9390-val_recall_mean_1=30.7600.ckpt"
+# )
 
 audio_fps = [
     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence1/1000268201_693b08cb0e_0.wav",
@@ -71,7 +79,7 @@ forced_alignment_fps = [
 ]
 
 
-def draw_plot(waveform, attention_weights, alignment_data, output_image_path):
+def draw_plot(waveform, attention_weights, alignment_data, output_image_path,top1_kw_text=None):
     # attention_weights:  num_heads, keyword_num, src_len (audio_len)
     n_heads = attention_weights.shape[0]
     n_keywords = attention_weights.shape[1]
@@ -141,19 +149,22 @@ def draw_plot(waveform, attention_weights, alignment_data, output_image_path):
             ax.set_yticks([])
             ax.set_ylim(-1.0, 1.0)
             ax.set_xlim(0, waveform.size(-1))
-            ax.set_title(f"Kw#{kw_i}, Head#{head_i}")
+            if top1_kw_text is None:
+                ax.set_title(f"Kw#{kw_i}, Head#{head_i}")
+            else:
+                ax.set_title(f"Kw#{kw_i}, Head#{head_i}, kw='{top1_kw_text[kw_i]}'")
 
     plt.savefig(output_image_path)
     plt.clf()
 
 
 def process_file(audio_fp, forced_alignment_fp):
-
+    mymodel.eval()
     audio_tensor = loadAudio(audio_fp)
     with open(forced_alignment_fp, "r") as f:
         alignment_data = json.load(f)
-
-    cls_weights = mymodel.get_attention_weights(wav=[audio_tensor])
+    with torch.no_grad():
+        cls_weights, top1_kw_text = mymodel.get_attention_weights(wav=[audio_tensor])
 
     num_head, keyword_num = cls_weights[0].shape[:2]
     # (bsz,num_head, keyword_num ,source_L)
@@ -167,6 +178,7 @@ def process_file(audio_fp, forced_alignment_fp):
         output_image_path="{}.png".format(
             os.path.basename(audio_fp).replace(".wav", "")
         ),
+        top1_kw_text=top1_kw_text[0],
     )
 
 

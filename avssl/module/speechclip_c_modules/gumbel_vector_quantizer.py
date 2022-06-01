@@ -352,6 +352,18 @@ class SimpleVectorQuantizer(nn.Module):
         # average over minibatch and all timesteps of the codewords logits and get their prob by softmax (grp, num_vars)
         avg_probs = torch.softmax(x.view(bsz * tsz, 1, -1).float(), dim=-1).mean(dim=0)
 
+        probs_per_t = torch.softmax( x.view(bsz,tsz,-1), dim=-1).contiguous().permute(1,0,2)
+        # probs_per_t shape (tsz,bsz,num_vars)
+        assert probs_per_t.shape[0] == tsz
+        assert probs_per_t.shape[1] == bsz
+
+        ent_per_t = -torch.sum(probs_per_t * torch.log(probs_per_t+ 1e-9), dim=-1)
+        # ent_per_t shape (tsz,bsz)
+        ent_per_t = ent_per_t.mean(dim=-1)
+        # ent_per_t shape (tsz,)
+        del probs_per_t
+        result["ent_per_t"] = ent_per_t
+
         # prob_cpx : probs for all codewords in each codebook group : (grp, num_vars) (use softmax as prob)
         result["prob_perplexity"] = torch.exp(
             -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)

@@ -1,7 +1,6 @@
 import abc
 import argparse
 import os
-from tabnanny import verbose
 
 import pytorch_lightning
 import torch
@@ -17,6 +16,7 @@ from ..data import (
     PlacesImageCaptionDataset,
     collate_general,
 )
+from ..util import add_general_arguments, set_logging, set_pl_logger
 
 
 class BaseTask:
@@ -42,43 +42,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         super().__init__()
 
     def add_args(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        parser.add_argument(
-            "--config", type=str, default=str, help="Configuration file."
-        )
-        parser.add_argument("--ckpt", type=str, default="", help="Checkpoint to load.")
-        parser.add_argument(
-            "--device",
-            type=str,
-            default="cuda:0",
-            help="Device name, could be cuda:X or cpu.",
-        )
-        parser.add_argument(
-            "--gpus", type=int, default=1, help="Number of GPUs for training."
-        )
-        parser.add_argument("--njobs", type=int, default=0, help="Number of workers.")
-        parser.add_argument("--seed", type=int, default=7122, help="Fix random seed.")
-        parser.add_argument(
-            "--save_path", type=str, default="", help="Directory to save ckpts."
-        )
-        parser.add_argument(
-            "--train", action="store_true", default=False, help="Train model"
-        )
-        parser.add_argument(
-            "--eval",
-            action="store_true",
-            default=False,
-            help="Evaluate model on dev set",
-        )
-        parser.add_argument(
-            "--test",
-            action="store_true",
-            default=False,
-            help="Inference model on test set",
-        )
-        parser.add_argument(
-            "--resume", type=str, default="", help="Checkpoint to resume."
-        )
-
+        parser = add_general_arguments(parser)
         return parser
 
     def parse_args(self, parser: argparse.ArgumentParser) -> argparse.Namespace:
@@ -89,6 +53,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             args.gpus = 0
 
         self.args = args
+        set_logging(args)
 
         return args
 
@@ -225,7 +190,9 @@ class TrainSpeechClipBaseTask(BaseTask):
             mode="max",
             every_n_epochs=1,
         )
-        config.trainer.limit_val_batches = 8
+
+        config.trainer.logger = set_pl_logger(config)
+
         trainer = Trainer(
             callbacks=[
                 TQDMProgressBar(),
@@ -238,6 +205,23 @@ class TrainSpeechClipBaseTask(BaseTask):
             resume_from_checkpoint=None if self.args.resume == "" else self.args.resume,
             **config.trainer,
         )
+        # print(config.trainer)
+        # trainer = Trainer(
+        #     callbacks=[
+        #         TQDMProgressBar(),
+        #         model_checkpoint_val_loss,
+        #         model_checkpoint_recall,
+        #         *custom_trainer_callbacks,
+        #     ],
+        #     enable_progress_bar=True,
+        #     accelerator="gpu", 
+        #     devices=2, 
+        #     strategy="dp",
+        #     resume_from_checkpoint=None if self.args.resume == "" else self.args.resume,
+        #     **config.trainer,
+        # )
+
+        # Trainer(accelerator=”gpu”, devices=k, strategy=’dp’)
 
         if self.args.train:
             trainer.fit(model, tr_loader, dv_loader, ckpt_path=self.args.ckpt)

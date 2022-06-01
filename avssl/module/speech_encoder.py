@@ -20,6 +20,7 @@ class S3prlSpeechEncoder(nn.Module):
         layer_drop: Union[str, float] = 0.0,
         max_audio_len: int = -1,
         reinit_layers: List[int] = [],
+        unfreeze_layers: List[int] = [],
         **kwargs,
     ):
         """Speech Encoder with S3PRL (v0.3.1)
@@ -41,6 +42,7 @@ class S3prlSpeechEncoder(nn.Module):
         self.feat_select_idx = feat_select_idx
         self.max_audio_len = max_audio_len
         self.reinit_layers = reinit_layers
+        self.unfreeze_layers = unfreeze_layers
 
         self.encoder = getattr(hub, name)().to(device)
         if hasattr(self.encoder, "get_downsample_rates"):
@@ -66,12 +68,28 @@ class S3prlSpeechEncoder(nn.Module):
             else:
                 raise ValueError(f"layer_drop = {layer_drop} is not supported.")
 
+            assert not (len(reinit_layers) > 0 and len(unfreeze_layers) > 0)
             if len(reinit_layers) > 0:
                 logging.warning(f"Reinitializing encoder layers {reinit_layers}")
                 assert self.trainable
                 for i, layer in enumerate(self.encoder.model.encoder.layers):
                     if i in reinit_layers:
                         layer.apply(init_weights)
+                    else:
+                        freeze_model(layer)
+
+                freeze_model(self.encoder.model.encoder.pos_conv)
+                freeze_model(self.encoder.model.layer_norm)
+                freeze_model(self.encoder.model.feature_extractor)
+                freeze_model(self.encoder.model.post_extract_proj)
+                self.encoder.model.feature_grad_mult = 0
+            if len(unfreeze_layers) > 0:
+                logging.warning(f"Freezing encoder layers excluding {unfreeze_layers}")
+                assert self.trainable
+                for i, layer in enumerate(self.encoder.model.encoder.layers):
+                    if i in unfreeze_layers:
+                        pass
+                        # layer.apply(init_weights)
                     else:
                         freeze_model(layer)
 
