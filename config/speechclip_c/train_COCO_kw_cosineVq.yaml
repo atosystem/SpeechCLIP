@@ -1,8 +1,8 @@
 data:
   dataset:
     name: coco
-    dataset_root: /home/vjsalt22/dataset/coco/
-  batch_size: 32
+    dataset_root: /work/vjsalt22/dataset/coco/
+  batch_size: 64
   dev_batch_size: 2
   split_ratio: 0.9
 
@@ -16,7 +16,7 @@ vq:
   activation: gelu # relu or gelu
   type: SimpleVectorQuantizer # which type of quantizer to use, gumbel or kmeans
   args:
-    temp: fixed=1 #[2.0, 0.5, 0.999995]
+    temp: fixed=0.1 #[2.0, 0.5, 0.999995]
     time_first: true
     use_gumbel: false
     hard: true
@@ -47,7 +47,7 @@ clip:
 
 keyword:
   attention_heads: 1
-  number: 16
+  number: 8
   detokenized_K_neighbors: 10
   retrieve_method: cosine # cosine or pseudo_inverse
   batchnorms:
@@ -60,11 +60,11 @@ audio_encoder:
   type: s3prl
   name: hubert
   pretrained: true
-  trainable: true
-  feat_select_idx: last_hidden_state #last_hidden_state # all
+  trainable: false
+  feat_select_idx: all #last_hidden_state # all
   layer_drop: 0.0
   max_audio_len: 95573 #102400
-  reinit_layers: [10, 11]
+  # reinit_layers: [10, 11]
   optim:
     name: Adam
     args:
@@ -72,20 +72,21 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 5000
-    max_step: 50000
+    warmup: 40000
+    max_step: 4000000
     final_lr: 1.e-8
 
 trainer:
-  max_steps: 50000
+  max_steps: 400000
   gradient_clip_val: 4
   accumulate_grad_batches: 1
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
   log_every_n_steps: 8
-  default_root_dir: exp/sc_c/kw4
+  default_root_dir: exp/COCO/1e-4
   num_sanity_val_steps: 0
+  strategy: ddp
   # accelerator: dp
   # limit_train_batches: 1
   #limit_val_batches: 8
