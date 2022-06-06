@@ -41,7 +41,7 @@ from .base_model import BaseLightningModel
 from ..util import freeze_model
 
 def load_fastvgs(model_type: str = "fast-vgs-plus", pretrained: bool = True, trainable: bool = False, superb: bool = False):
-    model_path = f"/work/twsytbs117/audio-visual-ssl/avssl/model/{model_type}_coco"
+    model_path = f"/work/vjsalt22/hsuanfu/audio-visual-ssl/avssl/model/{model_type}_coco"
     # load args
     with open(f"{model_path}/args.pkl", "rb") as f:
         args = pickle.load(f)
@@ -263,13 +263,13 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             audio_feat = audio_feat.sum(dim=0)
             assert audio_feat.shape == (bsz, t_len, h_dim)
 
-        audio_feat_len = torch.LongTensor(
-            [round(l / self.downsample_rate) for l in wav_len]
-        ).to(audio_feat.device)
-
-        audio_feat_len = torch.clamp_max(
-            audio_feat_len, audio_feat.shape[1]
-        )
+        if self.audio_encoder_type != "s3prl":
+            audio_feat_len = torch.LongTensor(
+                [round(l / self.downsample_rate) for l in wav_len]
+            ).to(audio_feat.device)
+            audio_feat_len = torch.clamp_max(
+                audio_feat_len, audio_feat.shape[1]
+            )
         
         return audio_feat, audio_feat_len
 
@@ -2115,7 +2115,7 @@ class KeywordCascadedSpeechClip_ProjVQ_Cosine(KeywordCascadedSpeechClip_ProjVQ):
 
         keywords = self.bn_layer(keywords)
         return keywords
-        # return keywords[:,2].view(bsz,1,-1).repeat(1,2,1)
+        # return keywords[:,0].view(bsz,1,-1).repeat(1,2,1)
 
         # cosine
         cos_score = []
