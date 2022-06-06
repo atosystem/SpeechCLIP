@@ -61,7 +61,7 @@ class ClipModel(nn.Module):
         if reduce_subword_embbedding is not None:
             if not os.path.exists(reduce_subword_embbedding):
                 reduce_subword_embbedding = os.path.join(
-                    f"/work/vjsalt22/atosystem/audio-visual-ssl/",
+                    "/work/{}/atosystem/audio-visual-ssl/".format(os.environ["USER"]),
                     reduce_subword_embbedding,
                 )
 
@@ -208,15 +208,19 @@ class ClipModel(nn.Module):
         return self.model.encode_image(image)
 
     def encode_subword_prob(
-        self, result: dict, audio_len: torch.Tensor, vq_type: string
+        self, subword_prob:torch.Tensor, audio_len: torch.Tensor
     ) -> torch.Tensor:
-        prob, token_idx = result["subword_prob"], result["targets"].squeeze(-1)
 
-        bsz, seq_len, max_len = prob.size(0), prob.size(1), 77
+        bsz, slen, feat_dim = subword_prob.shape
+        TEXT_CLIP_MAX_LEN = 77
 
-        assert seq_len == token_idx.shape[1], "{} {}".format(
-            seq_len, token_idx.shape[1]
-        )
+        if self.selected_text_emb_ids is None:
+            sot_idx, eot_idx = (
+                self.tokenizer.encoder["<|startoftext|>"],
+                self.tokenizer.encoder["<|endoftext|>"],
+            )
+        else:
+            sot_idx, eot_idx = self.startOfTxt_reduced, self.endOfTxt_reduced
 
         # 2,3
         sot_idx, eot_idx = torch.tensor([self.startOfTxt_reduced]).to(
@@ -226,70 +230,49 @@ class ClipModel(nn.Module):
         sot_emb = self.model.token_embedding(sot_idx)
         eot_emb = self.model.token_embedding(eot_idx)
 
-        assert vq_type in ["kmeans", "gumbel"], "Not implemented vq type"
-        if vq_type == "kmeans":
-            # if using kmeans, we take hard targets but not soft prob distribution
-            weighted_subword_embd = self.model.token_embedding(token_idx)
-        else:
-            weighted_subword_embd = prob @ self.model.token_embedding.weight
+
+        weighted_subword_embd = subword_prob @ self.model.token_embedding.weight
 
         # prepend sot token in the front
-        token_idx = torch.cat([sot_idx.unsqueeze(0).repeat(bsz, 1), token_idx], dim=1)
         weighted_subword_embd = torch.cat(
             [sot_emb.unsqueeze(0).repeat(bsz, 1, 1), weighted_subword_embd], dim=1
         )
 
         # truncate
-        token_idx = token_idx[:, :max_len]
-        weighted_subword_embd = weighted_subword_embd[:, :max_len, :]
+        weighted_subword_embd = weighted_subword_embd[:, :TEXT_CLIP_MAX_LEN, :]
 
         seq_len = weighted_subword_embd.size(1)
 
         # pad to max len = 77
-        paddings_idx = torch.zeros(bsz, max_len - seq_len).int().to(self.device)
-        paddings = self.model.token_embedding(paddings_idx)
+        paddings_idx = torch.zeros(bsz, TEXT_CLIP_MAX_LEN - seq_len).int().to(self.device)
+        padding_embs = self.model.token_embedding(paddings_idx)
 
-        token_idx = torch.cat((token_idx, paddings_idx), dim=1)
-        weighted_subword_embd = torch.cat((weighted_subword_embd, paddings), dim=1)
+        weighted_subword_embd = torch.cat((weighted_subword_embd, padding_embs), dim=1)
         del paddings_idx
-        del paddings
+        del padding_embs
 
-        assert token_idx.shape == (bsz, max_len), "{} {}".format(
-            token_idx.shape, (bsz, max_len)
-        )
         assert weighted_subword_embd.shape == (
             bsz,
-            max_len,
+            TEXT_CLIP_MAX_LEN,
             self.model.token_embedding.embedding_dim,
         ), "{} {}".format(
             weighted_subword_embd.shape,
-            (bsz, max_len, self.model.token_embedding.embedding_dim),
+            (bsz, TEXT_CLIP_MAX_LEN, self.model.token_embedding.embedding_dim),
         )
 
+        eot_positions = audio_len + 1
         # insert eot
         for i, _audio_len in enumerate(audio_len):
-            if _audio_len >= max_len - 2:
+            if _audio_len >= TEXT_CLIP_MAX_LEN - 2:
                 # audio len too long
-                token_idx[i, -1] = eot_idx
+                eot_positions[i] = TEXT_CLIP_MAX_LEN -1
                 weighted_subword_embd[:, -1, :] = eot_emb
             else:
-                token_idx[i, _audio_len + 1] = eot_idx
                 weighted_subword_embd[:, _audio_len + 1, :] = eot_emb
 
-                # padding for timesteps after eot is inserted
-                token_idx[i, _audio_len + 1 + 1 :] = torch.zeros(
-                    max_len - (_audio_len + 2)
-                )
-                weighted_subword_embd[
-                    i, _audio_len + 1 + 1 :, :
-                ] = self.model.token_embedding(
-                    torch.zeros(max_len - (_audio_len + 2)).int().to(self.device)
-                )
-
-        assert token_idx.shape == (bsz, max_len)
         assert weighted_subword_embd.shape == (
             bsz,
-            max_len,
+            TEXT_CLIP_MAX_LEN,
             self.model.token_embedding.embedding_dim,
         )
 
@@ -304,11 +287,10 @@ class ClipModel(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-
         x = (
             x[
                 torch.arange(x.shape[0]),
-                torch.argmax((token_idx == self.endOfTxt_reduced).long(), dim=-1),
+                eot_positions,
             ]
             @ self.model.text_projection
         )
@@ -353,6 +335,7 @@ class ClipModel(nn.Module):
 
         x = self.model.token_embedding(text)
         x[:, 1 : 1 + keyword_num] = keywords
+        x = x + self.model.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.model.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD

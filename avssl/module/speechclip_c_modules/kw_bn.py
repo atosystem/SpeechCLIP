@@ -68,10 +68,11 @@ class Kw_BatchNorm(nn.Module):
             self.bn_layer.weight.requires_grad = self.learnable
             self.bn_layer.bias.requires_grad = self.learnable
 
-    def forward(self, keywords):
+    def forward(self, keywords,seq_lens=None):
         assert keywords.dim() == 3
-        assert keywords.shape[1] == self.kw_num
         assert keywords.shape[2] == self.kw_dim
+        if seq_lens is None:
+            assert keywords.shape[1] == self.kw_num
         bsz = keywords.shape[0]
 
         if self.batchnorm_type == "eachKw":
@@ -96,7 +97,28 @@ class Kw_BatchNorm(nn.Module):
                 keywords = torch.stack(keywords_bns, dim=1)
                 del keywords_bns
         elif self.batchnorm_type == "same":
-            keywords = self.bn_layer(keywords.permute(0, 2, 1)).permute(0, 2, 1)
+            if seq_lens is None:
+                keywords = self.bn_layer(keywords.permute(0, 2, 1)).permute(0, 2, 1)
+            else:
+                kw_flatten = []
+                assert seq_lens.dim() == 1
+
+                seq_lens = seq_lens.tolist()
+
+                offsets = [0] 
+                for b_i in range(keywords.size(0)):
+                    kw_flatten.append(keywords[b_i,:seq_lens[b_i]].view(seq_lens[b_i],-1))
+                    offsets.append(offsets[-1] + seq_lens[b_i])
+                kw_flatten = torch.cat(kw_flatten,dim=0)
+                assert kw_flatten.size(0) == sum(seq_lens)
+                # kw_flatten shape [#total kws, kw_dim]
+                kw_flatten = self.bn_layer(kw_flatten)
+
+                for b_i, (st_i, ed_i) in enumerate(zip(offsets[:-1],offsets[1:])):
+                    assert seq_lens[b_i] == ed_i - st_i
+                    keywords[b_i,:seq_lens[b_i]] = kw_flatten[st_i:ed_i]
+
+                # keywords = self.bn_layer(keywords.permute(0, 2, 1)).permute(0, 2, 1)
         else:
             raise NotImplementedError()
 

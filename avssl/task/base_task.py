@@ -191,9 +191,9 @@ class TrainSpeechClipBaseTask(BaseTask):
             every_n_epochs=1,
         )
 
-        # config.trainer.logger = set_pl_logger(config)
+        config.trainer.logger = set_pl_logger(config)
 
-        config.trainer.logger = True
+        # config.trainer.logger = True
 
         trainer = Trainer(
             callbacks=[
