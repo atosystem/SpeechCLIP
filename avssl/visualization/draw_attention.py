@@ -2,8 +2,10 @@ import json
 import os
 
 import librosa
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from torch.nn import functional as F
 
 from ..model import KeywordCascadedSpeechClip, KeywordCascadedSpeechClip_ProjVQ_Cosine
 
@@ -38,14 +40,74 @@ def loadAudio(path):
 #     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_eachbn_scale_1.0_cosineVq_heads_1_keyword_8/epoch=161-step=2591-val_recall_mean_1=5.2600.ckpt"
 # )
 
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_eachbn_scale_1.0_cosineVq_heads_1_keyword_8_bsz_64_weightedSum/epoch=48-step=22931-val_recall_mean_1=6.1000.ckpt"
+# )
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/cosineVq_kw_8_bsz_64_weightedSum_vqTemp_fixed_0.1/epoch=46-step=21995-val_recall_mean_1=6.7500.ckpt"
+# )
+
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/cosineVq_kw_8_bsz_64_weightedSum_fixedtmp_0.1_div_per_frame_0.5/epoch=100-step=47267-val_recall_mean_1=5.6400.ckpt"
+# )
+
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/cosineVq_kw_8_bsz_64_weightedSum_fixedtmp_0.1_posEmb_50k/epoch=99-step=46799-val_recall_mean_1=9.9800.ckpt"
+# )
 mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
-    "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_eachbn_scale_1.0_cosineVq_heads_1_keyword_8_bsz_64_weightedSum/epoch=48-step=22931-val_recall_mean_1=6.1000.ckpt"
+    "/work/twsezjg982/atosystem/audio-visual-ssl/exp/cosineVq_kw_8_bsz_64_weightedSum_fixedtmp_0.1_div_per_kw_0.5_frame_0.5/epoch=81-step=38375-val_recall_mean_1=4.7200.ckpt"
 )
+# mymodel = KeywordCascadedSpeechClip_ProjVQ_Cosine.load_from_checkpoint(
+#     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/cosineVq_kw_8_bsz_64_weightedSum_fixedtmp_0.1_div_per_kw_0.5/epoch=98-step=46331-val_recall_mean_1=7.3100.ckpt"
+
+# )
 
 # mymodel = KeywordCascadedSpeechClip.load_from_checkpoint(
 #     "/work/twsezjg982/atosystem/audio-visual-ssl/exp/kw_8kw_1head/epoch=29-step=9390-val_recall_mean_1=30.7600.ckpt"
 # )
 
+# audio_fps = [
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-0.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-1.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-2.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-3.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-4.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-5.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-6.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-7.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-8.wav",
+#     "/work/twsezjg982/dataset/SNIPS/test/Aditi-snips-test-9.wav",
+# ]
+
+# forced_alignment_fps = [
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-0.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-1.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-2.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-3.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-4.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-5.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-6.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-7.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-8.json",
+#     "/work/twsezjg982/dataset/SNIPS/force_alignment/results/Aditi-snips-test-9.json",
+# ]
+
+
+# audio_fps = [
+#     "/work/twsezjg982/dataset/flickr/flickr_audio/wavs_with_no_silence/756004341_1a816df714_0.wav",
+#     "/work/twsezjg982/dataset/flickr/flickr_audio/wavs_with_no_silence/756004341_1a816df714_1.wav",
+#     "/work/twsezjg982/dataset/flickr/flickr_audio/wavs_with_no_silence/756004341_1a816df714_2.wav",
+#     "/work/twsezjg982/dataset/flickr/flickr_audio/wavs_with_no_silence/756004341_1a816df714_3.wav",
+#     "/work/twsezjg982/dataset/flickr/flickr_audio/wavs_with_no_silence/756004341_1a816df714_4.wav",
+# ]
+
+forced_alignment_fps = [
+    "/work/twsezjg982/dataset/flickr/force_alignment/results_no_silence/756004341_1a816df714_0.json",
+    "/work/twsezjg982/dataset/flickr/force_alignment/results_no_silence/756004341_1a816df714_1.json",
+    "/work/twsezjg982/dataset/flickr/force_alignment/results_no_silence/756004341_1a816df714_2.json",
+    "/work/twsezjg982/dataset/flickr/force_alignment/results_no_silence/756004341_1a816df714_3.json",
+    "/work/twsezjg982/dataset/flickr/force_alignment/results_no_silence/756004341_1a816df714_4.json",
+]
 audio_fps = [
     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence1/1000268201_693b08cb0e_0.wav",
     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence1/1000268201_693b08cb0e_1.wav",
@@ -54,33 +116,33 @@ audio_fps = [
     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence1/1000268201_693b08cb0e_4.wav",
 ]
 
-forced_alignment_fps = [
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_0.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_1.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_2.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_3.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_4.json",
-]
+# forced_alignment_fps = [
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_0.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_1.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_2.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_3.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1000268201_693b08cb0e_4.json",
+# ]
 
-audio_fps = [
-    "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_0.wav",
-    "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_1.wav",
-    "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_2.wav",
-    "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_3.wav",
-    "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_4.wav",
-]
+# audio_fps = [
+#     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_0.wav",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_1.wav",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_2.wav",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_3.wav",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/test_data_no_silence/1001773457_577c3a7d70_4.wav",
+# ]
 
-forced_alignment_fps = [
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_0.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_1.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_2.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_3.json",
-    "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_4.json",
-]
+# forced_alignment_fps = [
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_0.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_1.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_2.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_3.json",
+#     "/work/twsezjg982/dataset/flickr/force_alignment/results_test_data_no_silence/1001773457_577c3a7d70_4.json",
+# ]
 
 
 def draw_plot(
-    waveform, attention_weights, alignment_data, output_image_path, top1_kw_text=None
+    waveform, attention_weights, alignment_data, output_image_path, top1_kw_text=None,ent_per_Kw = None
 ):
     # attention_weights:  num_heads, keyword_num, src_len (audio_len)
     n_heads = attention_weights.shape[0]
@@ -110,6 +172,11 @@ def draw_plot(
         figsize=(15 * n_keywords, 3 * n_heads + 0.5 * (n_heads - 1)),
         sharex=True,
     )
+
+    all_ent_over_time = np.zeros(n_keywords)
+    all_sth_over_time = np.zeros(n_keywords)
+    all_codeEnt = np.zeros(n_keywords)
+
     for head_i in range(n_heads):
         if n_heads == 1:
             ax_row = axs
@@ -139,6 +206,14 @@ def draw_plot(
                 ax.axvspan(x0, x1, alpha=min(1.0, _weight.item()), color="green")
                 # ax.annotate(f"{_weight:.2f}", (x0, 0.8))
                 # ax.annotate(f"{word.score:.2f}", (x0, 0.8))
+            normed_prob = attention_weights[head_i, kw_i]
+            normed_prob = normed_prob / torch.sum(normed_prob)
+            ent = -torch.mean(normed_prob * torch.log(normed_prob))
+
+            smoothness = F.mse_loss(normed_prob[:-1],normed_prob[1:]).item()
+            all_ent_over_time[kw_i] = ent.item()
+            all_sth_over_time[kw_i] = smoothness
+            all_codeEnt[kw_i] = ent_per_Kw[kw_i].item()
             # print(len(waveform))
             # print("weight x1",x1)
             # exit(1)
@@ -154,8 +229,27 @@ def draw_plot(
             if top1_kw_text is None:
                 ax.set_title(f"Kw#{kw_i}, Head#{head_i}")
             else:
-                ax.set_title(f"Kw#{kw_i}, Head#{head_i}, kw='{top1_kw_text[kw_i]}'")
+                if not ent_per_Kw is None:
+                    ax.set_title(f"Kw#{kw_i}, Head#{head_i}, kw='{top1_kw_text[kw_i]}', ent={ent.item():2f}, codeEnt={ent_per_Kw[kw_i].item():2f}, sth:{smoothness:2f}")
+                else:
+                    ax.set_title(f"Kw#{kw_i}, Head#{head_i}, kw='{top1_kw_text[kw_i]}', ent={ent.item():2f}")
+            description_text = ""
+            description_text += "min(ent): kw#{}\n".format(
+                np.argmin(all_ent_over_time)
+            )
+            description_text += "max(ent): kw#{}\n".format(
+                np.argmax(all_sth_over_time)
+            )
+            description_text += "min(ent): kw#{}\n".format(
+                np.argmin(all_codeEnt)
+            )
+            # props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
 
+            # # place a text box in upper left in axes coords
+            # ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
+            #         verticalalignment='top', bbox=props)
+    
+    plt.text(0.5,0.5,description_text,fontsize=14,horizontalalignment='right')
     plt.savefig(output_image_path)
     plt.clf()
 
@@ -166,7 +260,7 @@ def process_file(audio_fp, forced_alignment_fp):
     with open(forced_alignment_fp, "r") as f:
         alignment_data = json.load(f)
     with torch.no_grad():
-        cls_weights, top1_kw_text = mymodel.get_attention_weights(wav=[audio_tensor])
+        cls_weights, top1_kw_text, ent_per_Kw = mymodel.get_attention_weights(wav=[audio_tensor])
 
     num_head, keyword_num = cls_weights[0].shape[:2]
     # (bsz,num_head, keyword_num ,source_L)
@@ -181,6 +275,7 @@ def process_file(audio_fp, forced_alignment_fp):
             os.path.basename(audio_fp).replace(".wav", "")
         ),
         top1_kw_text=top1_kw_text[0],
+        ent_per_Kw = ent_per_Kw,
     )
 
 

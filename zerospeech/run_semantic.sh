@@ -13,9 +13,11 @@ DATASET=/work/twsezjg982/dataset/zerospeech2021
 
 # zerospeech2021-evaluate --no-phonetic --no-lexical --no-syntactic $DATASET $SUBMISSION
 
-exp_dir=cosineVq_eachBN_8kw_1head_bsz64_kwALL_afterProj_KW_SPLIT
+# exp_dir=cosineVq_eachBN_8kw_1head_bsz64_postBN_KW_SPLIT
 
-for i in {0..15};
+exp_dir=cosineVq_eachBN_8kw_1head_bsz64_postBN_KW_SPLIT/
+
+for i in {0..7};
 do
     echo "Now in kw_$i"
     cd "/work/twsezjg982/atosystem/audio-visual-ssl/zerospeech/$exp_dir/kw_$i"

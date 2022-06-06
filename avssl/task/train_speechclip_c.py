@@ -27,6 +27,7 @@ from ..model import (
     KeywordCascadedSpeechClipBNEachKw,
     KeywordCascadedSpeechClipNLayer,
     VQCascadedSpeechClip,
+    KeywordCascadedSpeechClip_CIF_BN,
 )
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
@@ -193,4 +194,15 @@ class TrainKeywordProjVQCosineCascadedSpeechClip_AttMap_Constraint(
     def run(self):
         super().run(
             KeywordCascadedSpeechClip_ProjVQ_Cosine_AttMap_Constraint,
+        )
+
+class TrainKeywordProjVQCosineCascadedSpeechClip_CIF_BN(
+    TrainSpeechClipBaseTask
+):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(
+            KeywordCascadedSpeechClip_CIF_BN,
         )
