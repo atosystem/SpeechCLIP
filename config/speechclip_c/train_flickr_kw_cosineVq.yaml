@@ -85,7 +85,7 @@ trainer:
   precision: 16
   logger: true # set true to use tensorboard, set to `wandb` to use wandB
   log_every_n_steps: 8
-  default_root_dir: exp/sc_c/kw4
+  # default_root_dir: exp/sc_c/kw4
   num_sanity_val_steps: 0
   strategy: ddp
   # accelerator: dp

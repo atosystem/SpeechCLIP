@@ -26,7 +26,7 @@ from ..module import (
     losses,
     mutualRetrieval,
 )
-from ..module.fast_vgs_modules import Wav2Vec2Model_cls
+from ..module.fast_vgs_modules import Wav2Vec2Model_cls, DualEncoder
 from ..module.speechclip_c_modules import (
     GumbelVectorQuantizer,
     KmeansVectorQuantizer,
@@ -38,20 +38,29 @@ from ..optim import get_scheduler
 from ..util.embedding_visualization import draw_embedding_space_PCA
 from ..util.penalty_scheduler import PenaltyScheduler
 from .base_model import BaseLightningModel
+from ..util import freeze_model
 
+def load_fastvgs(model_type: str = "fast-vgs-plus", pretrained: bool = True, trainable: bool = False, superb: bool = False):
+    model_path = f"/work/vjsalt22/hsuanfu/audio-visual-ssl/avssl/model/{model_type}_coco"
+    # load args
+    with open(f"{model_path}/args.pkl", "rb") as f:
+        args = pickle.load(f)
 
-def load_fastvgs(pretrained: bool = True):
-    model_path = "/work/twsytbs117/audio-visual-ssl/avssl/model/fast-vgs-plus-coco"
+    if superb:
+        print("Using Wav2Vec2Model_cls model")
+        model =  Wav2Vec2Model_cls(args)
+    else:
+        print("Using DualEncoder model")
+        model = DualEncoder(args)
+
     if pretrained:
-        # load args
-        with open(f"{model_path}/args.pkl", "rb") as f:
-            args = pickle.load(f)
         # load weights
         weights = torch.load(os.path.join(model_path, "best_bundle.pth"))
-        model = Wav2Vec2Model_cls(args)
         model.carefully_load_state_dict(weights["dual_encoder"])
-    else:
-        model = Wav2Vec2Model_cls()
+
+    if not trainable:
+        freeze_model(model)
+
     return model
 
 
@@ -60,23 +69,31 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         super().__init__(config)
         # self.automatic_optimization = False
         # self.device = config.clip.device
-
         self.audio_encoder_type = config.audio_encoder.type
-        # self.audio_encoder_type = "fastvgs+"
+        assert self.audio_encoder_type in ["s3prl", "fastvgs+", "fastvgs"], f"Unknown audio encoder type {self.audio_encoder_type}"
+
+        self.feat_select_idx = config.audio_encoder.feat_select_idx
         if self.audio_encoder_type == "s3prl":
             self.audio_encoder = S3prlSpeechEncoder(**config.audio_encoder)
-        elif self.audio_encoder_type == "fastvgs+":
-            print("Using fastvgs+")
+        else:
+            assert hasattr(config.audio_encoder, "superb"), "You have to specify which features of fastvgs' outputs you want to use"
+            self.fast_vgs_superb = config.audio_encoder.superb
+            print(f"Using {self.audio_encoder_type}")
             self.audio_encoder = load_fastvgs(
-                pretrained=config.audio_encoder.pretrained
+                model_type=self.audio_encoder_type,
+                pretrained=config.audio_encoder.pretrained,
+                trainable=config.audio_encoder.trainable,
+                superb=self.fast_vgs_superb
             )
             self.audio_encoder.out_dim = 768
-            self.downsample_rate = 321
             self.max_audio_len = config.audio_encoder.max_audio_len
-        else:
-            raise NotImplementedError(
-                f"Unknown audio encoder type {self.audio_encoder_type}"
-            )
+
+            if self.fast_vgs_superb:
+                self.downsample_rate = 321
+            else:
+                self.downsample_rate = 4750
+                self.feat_select_idx = None
+
         self.embd_dim = self.audio_encoder.out_dim
 
         self.clip = ClipModel(
@@ -108,7 +125,7 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         if hasattr(config, "log_setting"):
             if hasattr(config.log_setting, "log_detokenize_results"):
                 self.log_detokenize_results = config.log_setting.log_detokenize_results
-        self.feat_select_idx = config.audio_encoder.feat_select_idx
+
         if self.feat_select_idx == "all":
             logging.warning("init self.audio_encoder_layer_weights")
             self.audio_encoder_layer_weights = nn.parameter.Parameter(
@@ -187,6 +204,16 @@ class CascadedSpeechClip_Base(BaseLightningModel):
 
         raise NotImplementedError()
 
+    def process_wav_list(self, wav: list, wav_len: list):
+        assert isinstance(wav, list), f"Input wav must be a list, your input wav is {type(wav)} type"
+        wav = [
+            random_crop_max_length(wav[b], self.max_audio_len, len(wav[b]))
+            for b in range(len(wav))
+        ]
+        wav = pad_sequence(wav, batch_first=True)
+        wav_len = [min(l, self.max_audio_len) for l in wav_len]
+        return wav, wav_len
+
     def forward_audio(
         self,
         wav: Union[torch.Tensor, list],
@@ -194,47 +221,38 @@ class CascadedSpeechClip_Base(BaseLightningModel):
         return_hidden_states: bool= False,
     ) -> Union[Tuple[Union[torch.Tensor, list], torch.Tensor], torch.Tensor]:
 
-        if self.audio_encoder_type == "fastvgs+":
+        if self.audio_encoder_type == "s3prl":
+            audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
+        else:
             if isinstance(wav, list):
-                wav = [
-                    random_crop_max_length(wav[b], self.max_audio_len, len(wav[b]))
-                    for b in range(len(wav))
-                ]
-                wav = pad_sequence(wav, batch_first=True)
-            wav_len = [min(l, self.max_audio_len) for l in wav_len]
+                wav, wav_len = self.process_wav_list(wav, wav_len)
 
             key_padding_mask = torch.ones(wav.size())
             for mask, length in zip(key_padding_mask, wav_len):
                 mask[:length] = 0.0
             key_padding_mask = key_padding_mask.bool().to(self.device)
 
-            # if superb, tgt_layer is not functioning, so you can ingore tgt_layer
-            output = self.audio_encoder(
-                source=wav,
-                padding_mask=key_padding_mask,
-                mask=False,
-                features_only=True,
-                superb=True,
-                tgt_layer=7,
-            )
-            audio_len = torch.LongTensor(
-                [round(l / self.downsample_rate) for l in wav_len]
-            ).to(output["last_hidden_state"].device)
-            audio_feat_len = torch.clamp_max(
-                audio_len, output["last_hidden_state"].shape[1]
-            )
-
-            if self.feat_select_idx == "all":
-                audio_feat = {}
-                audio_feat["hidden_states"] = output["hidden_states"]
-            elif self.feat_select_idx in range(len(output["hidden_states"])):
-                audio_feat = output["hidden_states"][self.feat_select_idx]
-            elif self.feat_select_idx == "last_hidden_state":
-                audio_feat = output[f"{self.feat_select_idx}"]
+            if self.fast_vgs_superb: 
+                # if superb, tgt_layer is not functioning, so you can ingore tgt_layer
+                output = self.audio_encoder(
+                    source=wav,
+                    padding_mask=key_padding_mask,
+                    mask=False,
+                    features_only=True,
+                    superb=True,
+                    tgt_layer=7,
+                )
+                if self.feat_select_idx == "all":
+                    audio_feat = {}
+                    audio_feat["hidden_states"] = output["hidden_states"]
+                elif self.feat_select_idx in range(len(output["hidden_states"])):
+                    audio_feat = output["hidden_states"][self.feat_select_idx]
+                elif self.feat_select_idx == "last_hidden_state":
+                    audio_feat = output[f"{self.feat_select_idx}"]
+                else:
+                    raise KeyError(self.feat_select_idx)
             else:
-                raise KeyError(self.feat_select_idx)
-        else:
-            audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
+                audio_feat, _, _, _ = self.audio_encoder.forward_audio(wav, key_padding_mask)
 
         if self.feat_select_idx == "all":
             hidden_states = audio_feat["hidden_states"]
@@ -249,6 +267,14 @@ class CascadedSpeechClip_Base(BaseLightningModel):
             if return_hidden_states:
                 return audio_feat, audio_feat_len, hidden_states
 
+        if self.audio_encoder_type != "s3prl":
+            audio_feat_len = torch.LongTensor(
+                [round(l / self.downsample_rate) for l in wav_len]
+            ).to(audio_feat.device)
+            audio_feat_len = torch.clamp_max(
+                audio_feat_len, audio_feat.shape[1]
+            )
+        
         return audio_feat, audio_feat_len
 
     def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:

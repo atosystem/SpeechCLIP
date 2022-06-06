@@ -27,7 +27,7 @@ python3 run_task.py \
     --gpus 1 \
     --njobs 8 \
     --seed 7122 \
-    --save_path "exp/fastvgs+_pretrained" \
+    --save_path "exp/fastvgs_superb/pretrained" \
     --train
 
     

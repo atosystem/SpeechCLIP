@@ -1,26 +1,19 @@
 data:
   dataset:
     name: flickr
-    dataset_root: /home/twsytbs117/dataset/flickr/
+    dataset_root: /home/twsytbs117/dataset/flickr
     text_file: Flickr8k.token.txt
+    wav_rm_silence: false
   batch_size: 64
   dev_batch_size: 8
   split_ratio: 0.9
+
+cache_mods: ["image"]
 
 log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
   log_detokenize_results_every_n_epoch: 5
   log_draw_pca_every_n_epoch: 10
-
-vq:
-  bn_before_vq : true
-  activation: gelu # relu or gelu
-  type: SimpleVectorQuantizer # which type of quantizer to use, gumbel or kmeans
-  args:
-    temp: fixed=0.1 #[2.0, 0.5, 0.999995]
-    time_first: true
-    use_gumbel: false
-    hard: true
 
 cl_loss:
   type: MaskedContrastiveLoss # SupConLoss
@@ -48,24 +41,22 @@ clip:
 
 keyword:
   attention_heads: 1
-  number: 16
+  number: 8
   detokenized_K_neighbors: 10
   retrieve_method: cosine # cosine or pseudo_inverse
   batchnorms:
     type: eachKw #eachKw or same
     std_scale: 1.0
     learnable: false
-    parallel: true
 
 audio_encoder:
-  type: fastvgs
-  superb: true
+  type: s3prl
+  name: hubert
   pretrained: true
   trainable: false
-  feat_select_idx: all #last_hidden_state # all
+  feat_select_idx: all
   layer_drop: 0.0
   max_audio_len: 102400
-  # reinit_layers: [10, 11]
   optim:
     name: Adam
     args:
@@ -73,19 +64,19 @@ audio_encoder:
       weight_decay: 1.e-6
   scheduler:
     name: linear_warmup_decay
-    warmup: 5000
-    max_step: 50000
+    warmup: 2500
+    max_step: 25000
     final_lr: 1.e-8
 
 trainer:
-  max_steps: 50000
-  gradient_clip_val: 4
+  max_steps: 25000
+  gradient_clip_val: 8
   accumulate_grad_batches: 1
   check_val_every_n_epoch: 1
   precision: 16
   logger: true
-  log_every_n_steps: 8
-  default_root_dir: exp/fastvgs_superb/pretrained
+  log_every_n_steps: 1
+  default_root_dir: exp/sc_c/para_base
   num_sanity_val_steps: 0
   # accelerator: dp
   # limit_train_batches: 1
