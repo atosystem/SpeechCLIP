@@ -218,7 +218,7 @@ class BaseDataset(Dataset):
             text = self._TokenizeText(self.data[index]["text"])
             ret_dict["text"] = text
         if "id" in self.data[index]:
-            ret_dict["id"] = self.data[index]["id"]
+            ret_dict["id"] = torch.LongTensor([self.data[index]["id"]])
 
         assert len(ret_dict) > 0, "dataset getitem must not be empty"
 

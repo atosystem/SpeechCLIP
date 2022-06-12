@@ -3,6 +3,10 @@ data:
     name: flickr
     dataset_root: /home/twsezjg982/dataset/flickr/
     text_file: Flickr8k.token.txt
+    clip_image_transform: ViT-B/32
+    load_image: true
+    load_audio: true
+    tokenizeText: true
   batch_size: 64
   dev_batch_size: 8
   split_ratio: 0.9
@@ -90,7 +94,7 @@ clip:
 
 
 audio_encoder:
-  type: s3prl_plus
+  type: FairseqHubert #s3prl_plus
   name: hubert
   pretrained: true
   trainable: false
@@ -119,7 +123,7 @@ trainer:
   log_every_n_steps: 8
   default_root_dir: exp/sc_c/kw4
   num_sanity_val_steps: 0
-  # strategy: dp
+  strategy: dp
   # limit_train_batches: 8
   # limit_val_batches: 8
 
@@ -129,4 +133,4 @@ log_setting:
   log_draw_pca_every_n_epoch: 10
 
 logger:
-  project: kw-general
+  project: kw-general_test

@@ -5,8 +5,6 @@ import re
 from collections import defaultdict
 from typing import List
 
-import clip
-
 from .base_dataset import BaseDataset, BaseImageCaptionDataset
 
 
@@ -84,18 +82,10 @@ class FlickrDataset(BaseDataset):
         audio_transform=None,
         target_sr: int = 16_000,
         load_audio: bool = True,
-        load_image: bool = False,
-        tokenizeText: bool = False,
+        load_image: bool = True,
         wav_rm_silence: bool = False,
-        clip_image_transform: str = None,
         **kwargs,
     ):
-        if clip_image_transform is not None:
-            logging.info(
-                "Load clip ({}) for image transform".format(clip_image_transform)
-            )
-            _, image_transform = clip.load(clip_image_transform, "cpu")
-
         super().__init__(
             dataset_root=dataset_root,
             split=split,
@@ -104,12 +94,13 @@ class FlickrDataset(BaseDataset):
             target_sr=target_sr,
             load_audio=load_audio,
             load_image=load_image,
-            tokenizeText=tokenizeText,
             **kwargs,
         )
 
         assert len(modalities) > 0, "Dataset's modalities cannot be none"
         self.modalities = modalities
+
+        exclude_files = []
 
         image_list_txt = os.path.join(
             self.dataset_root, f"Flickr_8k.{self.split}Images.txt"
@@ -200,7 +191,11 @@ class FlickrDataset(BaseDataset):
                             _subID = int(
                                 os.path.basename(p).split("_")[-1].replace(".wav", "")
                             )
-
+                            if (
+                                "{}_{}".format(filename2Id[image_name], _subID)
+                                in exclude_files
+                            ):
+                                continue
                             if "audio" in self.modalities:
                                 _entry["wav"] = p
                             if "image" in self.modalities:

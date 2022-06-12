@@ -21,11 +21,11 @@ from ..base import OrderedNamespace
 from ..data import random_crop_max_length
 from ..module import (
     ClipModel,
+    FairseqSpeechEncoder_Hubert,
     S3prlSpeechEncoder,
     S3prlSpeechEncoderPlus,
     SimpleCache,
     SupConLoss,
-    WeightedSumLayer,
     losses,
     mutualRetrieval,
 )
@@ -82,10 +82,10 @@ class KWClipBase(BaseLightningModel):
             self.audio_encoder = S3prlSpeechEncoder(**config.audio_encoder)
         elif self.audio_encoder_type == "s3prl_plus":
             self.audio_encoder = S3prlSpeechEncoderPlus(**config.audio_encoder)
-
+        elif self.audio_encoder_type == "FairseqHubert":
+            self.audio_encoder = FairseqSpeechEncoder_Hubert(**config.audio_encoder)
         self.clip = ClipModel(
             **config.clip,
-            device=self.device,
         )
 
         self.audio_embd_dim = self.audio_encoder.out_dim
@@ -108,52 +108,64 @@ class KWClipBase(BaseLightningModel):
         return_hidden_states: bool = False,
     ) -> Union[Tuple[Union[torch.Tensor, list], torch.Tensor], torch.Tensor]:
 
-        if self.audio_encoder_type in "s3prl_plus":
+        if self.audio_encoder_type in ["s3prl_plus", "FairseqHubert"]:
             audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError("Unknown type:{}".format(self.audio_encoder_type))
         return audio_feat, audio_feat_len
 
     def forward(self, batch, cal_loss: bool = True):
         raise NotImplementedError()
 
+    def compute_loss(self, input_feats):
+        """compute the loss here
+
+        Args:
+            input_feats (Any): the feats required for computing loss
+        """
+        raise NotImplementedError()
+
     def training_step(self, batch, batch_idx):
-        losses = self.forward(batch)[0]
+        # ss = "[{}]".format(self.device)
+        # ss += "\nwav : {}".format(len(batch["wav"]))
+        # ss += "\nwav_len : {}".format(len(batch["wav_len"]))
+        # ss += "\nimage : {}".format(len(batch["image"]))
+        # ss += "\nid : {}".format(len(batch["id"]))
+        # print(ss)
+        losses, log_metrics = self.forward(batch)[:2]
 
-        result = {
-            **{f"train_{k}": losses[k] for k in losses},
-            "cl_temp": self.criterion.current_temperature,
-        }
-        self.log_dict(
-            result,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        return {"loss_feats": losses, "log_metrics": log_metrics}
 
-        return {"loss": losses["loss"]}
+    def training_step_end(self, outputs):
+        if isinstance(outputs, dict):
+            if "loss" in outputs:
+                # training_step has already calculated the loss
+                return torch.mean(outputs["loss"])
+            elif "loss_feats" in outputs and "log_metrics" in outputs:
+                losses = self.compute_loss(outputs["loss_feats"])
+                log_metrics = outputs["log_metrics"]
+                result = {
+                    **{f"train_{k}": losses[k] for k in losses},
+                    **{f"train_{k}": torch.mean(log_metrics[k]) for k in log_metrics},
+                }
+                self.log_dict(
+                    result,
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=True,
+                    logger=True,
+                    sync_dist=True,
+                )
+                return {"loss": losses["loss"]}
+            else:
+                print("outputs", outputs)
+                raise NotImplementedError()
+        else:
+            print("outputs", outputs)
+            raise NotImplementedError()
 
     def validation_step(self, batch, batch_idx):
-        losses, others = self.forward(batch)
-
-        result = {
-            **{f"val_{k}": losses[k] for k in losses},
-        }
-
-        self.log_dict(
-            result,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-
-        for k in others:
-            if isinstance(others[k], torch.Tensor):
-                others[k] = others[k].detach().cpu()
+        losses, log_metrics, others = self.forward(batch)
 
         audio_feat = (
             others["cascaded_audio_feat"]
@@ -163,7 +175,6 @@ class KWClipBase(BaseLightningModel):
 
         image_feat = others["image_feat"]
         id = others["id"]
-
         return_dict = {
             "id": id,
             "audio_feat": audio_feat,
@@ -175,7 +186,30 @@ class KWClipBase(BaseLightningModel):
             return_dict["keywords"] = keywords
             return_dict["gold_text"] = batch["text"]
 
-        return return_dict
+        return {"loss_feats": losses, "log_metrics": log_metrics, "others": return_dict}
+
+    def validation_step_end(self, outputs):
+        assert isinstance(outputs, dict)
+        losses = self.compute_loss(outputs["loss_feats"])
+
+        log_metrics = outputs["log_metrics"]
+        result = {
+            **{f"val_{k}": losses[k] for k in losses},
+            **{f"val_{k}": torch.mean(log_metrics[k]) for k in log_metrics},
+        }
+        self.log_dict(
+            result,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+
+        for k in outputs["others"]:
+            if isinstance(outputs["others"][k], torch.Tensor):
+                outputs["others"][k] = outputs["others"][k].detach().cpu()
+        return outputs["others"]
 
     def validation_epoch_end(self, outputs):
         if "keywords" in outputs[0].keys():
@@ -202,7 +236,12 @@ class KWClipBase(BaseLightningModel):
             ) or not (hasattr(self, "log_detokenize_results_every_n_epoch")):
                 gold_texts = []
                 for x in outputs:
-                    gold_texts.extend(x["gold_text"])
+                    for sent in x["gold_text"]:
+                        # exit(1)
+                        gold_texts.append(
+                            self.clip.tokenizer.decode(sent.squeeze().tolist())
+                        )
+                        # gold_texts.extend(self.clip.deTokenize(x["gold_text"]))
                 # gold_texts = [ x["gold_text"] for x in outputs]
                 # gold_texts = [ x["gold_text"] for x in gold_texts]
                 all_keyword_embeddings = torch.cat(
@@ -223,7 +262,6 @@ class KWClipBase(BaseLightningModel):
                 tokenEmbeddings = self.clip.model.token_embedding.weight.detach().cpu()
 
                 # calculate mean, variance
-                # torch.save(all_keyword_embeddings,"all_keyword_embeddings_8kw_1head_pen0.5.pt")
 
                 # torch.norm(all_keyword_embeddings,dim=-1)
                 for i in range(self.keyword_num):
@@ -532,7 +570,8 @@ class KWClipBase(BaseLightningModel):
     def getTrainableParams(self) -> list:
         """getTrainableParams
 
-        return trainabble parameter list
+        return trainable parameter list
+        children class should return their additional trainable parameters
 
         Returns:
             list: list of trainable parameters
@@ -870,6 +909,57 @@ class KWClip_GeneralTransformer(KWClipBase):
     def feature_extractor_s3prl(self, wav):
         pass
 
+    def compute_loss(self, input_feats):
+        """compute the loss here
+
+        Args:
+            input_feats (Any): the feats required for computing loss
+        """
+        assert isinstance(input_feats, dict)
+        assert "id" in input_feats
+        assert (
+            "cascaded_audio_feat" in input_feats or "parallel_audio_feat" in input_feats
+        )
+        assert "image_feat" in input_feats
+
+        cascaded_audio_feat = (
+            input_feats["cascaded_audio_feat"].float()
+            if "cascaded_audio_feat" in input_feats
+            else None
+        )
+        parallel_audio_feat = (
+            input_feats["parallel_audio_feat"].float()
+            if "parallel_audio_feat" in input_feats
+            else None
+        )
+        image_feat = input_feats["image_feat"].float()
+        id = input_feats["id"]
+
+        losses = {"loss": 0}
+        if self.config.model_settings.cascaded_objective_weight > 0:
+            losses["c_cl_loss"] = self.criterion(
+                feat_A=cascaded_audio_feat,
+                feat_B=image_feat,
+                index=id,
+            )
+            losses["loss"] += (
+                self.config.model_settings.cascaded_objective_weight
+                * losses["c_cl_loss"]
+            )
+
+        if self.config.model_settings.parallel_objective_weight > 0:
+            losses["p_cl_loss"] = self.criterion(
+                feat_A=parallel_audio_feat,
+                feat_B=image_feat,
+                index=id,
+            )
+            losses["loss"] += (
+                self.config.model_settings.parallel_objective_weight
+                * losses["p_cl_loss"]
+            )
+
+        return losses
+
     def forward(
         self,
         batch,
@@ -880,7 +970,6 @@ class KWClip_GeneralTransformer(KWClipBase):
         wav_len = batch["wav_len"]
         image = batch["image"]
         id = batch["id"]
-        id = torch.cat(id, dim=0)
 
         # update device information to clip model
         self.clip.update_device(self.device)
@@ -918,51 +1007,46 @@ class KWClip_GeneralTransformer(KWClipBase):
                 audio_feat=audio_feat,
                 audio_len=audio_len,
             )
+        losses = {
+            "id": id,
+            "image_feat": image_feat,
+        }
+        log_metrics = {}
 
         if cascaded_audio_feat is not None:
             cascaded_audio_feat = cascaded_audio_feat / cascaded_audio_feat.norm(
                 dim=-1, keepdim=True
             )
+            losses["cascaded_audio_feat"] = cascaded_audio_feat
 
         if parallel_audio_feat is not None:
             parallel_audio_feat = parallel_audio_feat / parallel_audio_feat.norm(
                 dim=-1, keepdim=True
             )
+            losses["parallel_audio_feat"] = parallel_audio_feat
 
-        losses = {"loss": 0}
+        # losses = {"loss": 0}
         if self.config.model_settings.cascaded_objective_weight > 0:
-            losses["c_cl_loss"] = self.criterion(
-                feat_A=cascaded_audio_feat,
-                feat_B=image_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.cascaded_objective_weight
-                * losses["c_cl_loss"]
-            )
-            losses["softmax_temp"] = vq_results["temp"]
+            log_metrics["softmax_temp"] = vq_results["temp"]
 
         if self.config.model_settings.parallel_objective_weight > 0:
-            losses["p_cl_loss"] = self.criterion(
-                feat_A=parallel_audio_feat,
-                feat_B=image_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.parallel_objective_weight
-                * losses["p_cl_loss"]
-            )
+            pass
 
-        losses.update(
+        # losses.update(
+        log_metrics.update(
             {
                 "cl_temp": self.criterion.current_temperature,
             }
         )
-        return losses, {
-            "cascaded_audio_feat": cascaded_audio_feat,
-            "parallel_audio_feat": parallel_audio_feat,
-            "image_feat": image_feat,
-            "id": id,
-            "vq_results": vq_results,
-            "keywords": keywords,
-        }
+        return (
+            losses,
+            log_metrics,
+            {
+                "cascaded_audio_feat": cascaded_audio_feat,
+                "parallel_audio_feat": parallel_audio_feat,
+                "image_feat": image_feat,
+                "id": id,
+                "vq_results": vq_results,
+                "keywords": keywords,
+            },
+        )
