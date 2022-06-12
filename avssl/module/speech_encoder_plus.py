@@ -224,15 +224,18 @@ class S3prlSpeechEncoderPlus(nn.Module):
             return list(self.parameters())
         if self.trainable and len(self.reinit_layers) > 0:
             params = []
-            if self.feat_select_idx == "weighted_sum":
-                params += list(self.weightedsum_layer.parameters())
             for i in self.reinit_layers:
                 params += list(self.encoder.model.encoder.layers[i].parameters())
             if not self.encoder.model.encoder.layer_norm_first:
                 params += list(self.encoder.model.encoder.layer_norm.parameters())
             return params
         else:
-            return []
+            if self.feat_select_idx == FEAT_SELECT_IDX_WEIGHTED_SUM_MODE:
+                logger.info("Adding weightedsum params")
+                params = list(self.weightedsum_layer.parameters())
+                return params
+            else:
+                return []
 
     def forward(
         self,
@@ -311,26 +314,6 @@ class S3prlSpeechEncoderPlus(nn.Module):
         super().to(*args, **kwargs)
         self.device = next(self.parameters()).device
         return self
-
-
-class FairseqSpeechEncoder_Hubert1(nn.Module):
-    def __init__(self, **kwargs) -> None:
-        super().__init__()
-        self.out_dim = 768
-
-    def trainable_params(self) -> list:
-        return list(self.parameters())
-
-    def forward(
-        self,
-        wav: Union[torch.Tensor, list],
-        wav_len: Union[torch.Tensor, list] = [],
-        feat_select_idx: Union[str, list] = None,
-    ):
-        # exit(1)
-        out_wavs = torch.stack([x[: 768 * 10].reshape(10, 768) for x in wav], dim=0)
-        wav_len[:] = 10
-        return out_wavs, wav_len
 
 
 class FairseqSpeechEncoder_Hubert(nn.Module):
@@ -488,7 +471,12 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
                 params += list(self.encoder.encoder.layer_norm.parameters())
             return params
         else:
-            return []
+            if self.feat_select_idx == FEAT_SELECT_IDX_WEIGHTED_SUM_MODE:
+                logger.info("Adding weightedsum params")
+                params = list(self.weightedsum_layer.parameters())
+                return params
+            else:
+                return []
 
     def apply_customHubertForward(self):
 

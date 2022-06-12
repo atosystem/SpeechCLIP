@@ -916,9 +916,11 @@ class KWClip_GeneralTransformer(KWClipBase):
     def getTrainableParams(self):
         _params = super().getTrainableParams()
         if self.cascaded_branch is not None:
+            logger.info("Add cascaded_branch parameters")
             _params += list(self.cascaded_branch.parameters())
 
         if self.parallel_branch is not None:
+            logger.info("Add parallel_branch parameters")
             _params += list(self.parallel_branch.parameters())
 
         return _params
@@ -1024,6 +1026,9 @@ class KWClip_GeneralTransformer(KWClipBase):
                 audio_feat=audio_feat,
                 audio_len=audio_len,
             )
+
+        image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
+
         losses = {
             "id": id,
             "image_feat": image_feat,
