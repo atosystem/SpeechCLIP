@@ -118,16 +118,12 @@ class TrainSpeechClipBaseTask(BaseTask):
             if self.args.train:
                 tr_set = CoCoDataset(
                     split="train",
-                    load_image=False,
-                    tokenizeText=False,
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
             if self.args.train or self.args.eval:
                 dv_set = CoCoDataset(
                     split="val",
-                    load_image=False,
-                    tokenizeText=False,
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )

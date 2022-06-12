@@ -1,9 +1,13 @@
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import re
 from collections import defaultdict
 from typing import List
+
+import clip
 
 from .base_dataset import BaseDataset, BaseImageCaptionDataset
 
@@ -20,8 +24,14 @@ class CoCoDataset(BaseDataset):
         load_audio: bool = True,
         load_image: bool = True,
         wav_rm_silence: bool = False,
+        clip_image_transform: str = None,
         **kwargs,
     ):
+        if clip_image_transform is not None:
+            logger.info(
+                "Load clip ({}) for image transform".format(clip_image_transform)
+            )
+            _, image_transform = clip.load(clip_image_transform, "cpu")
         super().__init__(
             dataset_root=dataset_root,
             split=split,
@@ -72,4 +82,4 @@ class CoCoDataset(BaseDataset):
                     }
                 )
 
-        logging.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
+        logger.info(f"SpokenCOCO ({self.split}): {len(self.data)} samples")

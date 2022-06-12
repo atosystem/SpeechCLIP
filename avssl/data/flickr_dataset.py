@@ -1,5 +1,7 @@
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import re
 from collections import defaultdict
@@ -70,7 +72,7 @@ class FlickrImageCaptionDataset(BaseImageCaptionDataset):
                             }
                         )
 
-        logging.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
+        logger.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
 
 
 class FlickrDataset(BaseDataset):
@@ -91,7 +93,7 @@ class FlickrDataset(BaseDataset):
         **kwargs,
     ):
         if clip_image_transform is not None:
-            logging.info(
+            logger.info(
                 "Load clip ({}) for image transform".format(clip_image_transform)
             )
             _, image_transform = clip.load(clip_image_transform, "cpu")
@@ -216,4 +218,4 @@ class FlickrDataset(BaseDataset):
                             }
                         )
 
-        logging.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
+        logger.info(f"Flickr8k ({self.split}): {len(self.data)} samples")
