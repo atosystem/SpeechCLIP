@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import pickle
 import string
@@ -73,7 +75,7 @@ class ClipModel(nn.Module):
                 / np.sum(self.selected_text_emb_ids_dist)
             )
             del _data
-            logging.warning(
+            logger.warning(
                 "Reduce text embedding to size of {}".format(
                     len(self.selected_text_emb_ids)
                 )
@@ -208,7 +210,7 @@ class ClipModel(nn.Module):
         return self.model.encode_image(image)
 
     def encode_subword_prob(
-        self, subword_prob:torch.Tensor, audio_len: torch.Tensor
+        self, subword_prob: torch.Tensor, audio_len: torch.Tensor
     ) -> torch.Tensor:
 
         bsz, slen, feat_dim = subword_prob.shape
@@ -230,7 +232,6 @@ class ClipModel(nn.Module):
         sot_emb = self.model.token_embedding(sot_idx)
         eot_emb = self.model.token_embedding(eot_idx)
 
-
         weighted_subword_embd = subword_prob @ self.model.token_embedding.weight
 
         # prepend sot token in the front
@@ -244,7 +245,9 @@ class ClipModel(nn.Module):
         seq_len = weighted_subword_embd.size(1)
 
         # pad to max len = 77
-        paddings_idx = torch.zeros(bsz, TEXT_CLIP_MAX_LEN - seq_len).int().to(self.device)
+        paddings_idx = (
+            torch.zeros(bsz, TEXT_CLIP_MAX_LEN - seq_len).int().to(self.device)
+        )
         padding_embs = self.model.token_embedding(paddings_idx)
 
         weighted_subword_embd = torch.cat((weighted_subword_embd, padding_embs), dim=1)
@@ -265,7 +268,7 @@ class ClipModel(nn.Module):
         for i, _audio_len in enumerate(audio_len):
             if _audio_len >= TEXT_CLIP_MAX_LEN - 2:
                 # audio len too long
-                eot_positions[i] = TEXT_CLIP_MAX_LEN -1
+                eot_positions[i] = TEXT_CLIP_MAX_LEN - 1
                 weighted_subword_embd[:, -1, :] = eot_emb
             else:
                 weighted_subword_embd[:, _audio_len + 1, :] = eot_emb
@@ -313,7 +316,6 @@ class ClipModel(nn.Module):
         else:
             raise TypeError(f"Unknown keywords type {type(keywords)}")
 
-        res = {}
         # dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
         # nearest_dist, nearest_token = torch.min(dist, dim=-1)
         # res["nearest_token"] = nearest_token.unsqueeze(1)
@@ -348,7 +350,7 @@ class ClipModel(nn.Module):
         # take features from the eot embedding
         x = x[:, 1 + keyword_num] @ self.model.text_projection
 
-        return x, res
+        return x
 
     def encode_subword(
         self, prob: torch.Tensor, audio_len: torch.Tensor, vq_type: string

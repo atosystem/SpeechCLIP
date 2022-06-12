@@ -22,12 +22,12 @@ from ..model import (
     KeywordCascadedSpeechClip_ProjVQ,
     KeywordCascadedSpeechClip_ProjVQ_Cosine,
     KeywordCascadedSpeechClip_ProjVQ_Cosine_AttMap_Constraint,
+    KeywordCascadedSpeechClip_ProjVQ_Cosine_CIF,
     KeywordCascadedSpeechClip_ProjVQ_Cosine_w_Parallel,
     KeywordCascadedSpeechClipBN,
     KeywordCascadedSpeechClipBNEachKw,
     KeywordCascadedSpeechClipNLayer,
     VQCascadedSpeechClip,
-    KeywordCascadedSpeechClip_CIF_BN,
 )
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
@@ -196,13 +196,12 @@ class TrainKeywordProjVQCosineCascadedSpeechClip_AttMap_Constraint(
             KeywordCascadedSpeechClip_ProjVQ_Cosine_AttMap_Constraint,
         )
 
-class TrainKeywordProjVQCosineCascadedSpeechClip_CIF_BN(
-    TrainSpeechClipBaseTask
-):
+
+class TrainKeywordProjVQCosineCascadedSpeechClip_CIF(TrainSpeechClipBaseTask):
     def __init__(self):
         super().__init__()
 
     def run(self):
         super().run(
-            KeywordCascadedSpeechClip_CIF_BN,
+            KeywordCascadedSpeechClip_ProjVQ_Cosine_CIF,
         )

@@ -5,3 +5,5 @@ from .losses import MaskedContrastiveLoss, SupConLoss
 from .pooling import AttentivePoolingLayer, MeanPoolingLayer
 from .retrieval import mutualRetrieval
 from .speech_encoder import S3prlSpeechEncoder
+from .speech_encoder_plus import S3prlSpeechEncoderPlus
+from .weighted_sum import WeightedSumLayer

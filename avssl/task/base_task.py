@@ -191,7 +191,9 @@ class TrainSpeechClipBaseTask(BaseTask):
             every_n_epochs=1,
         )
 
-        config.trainer.logger = set_pl_logger(config)
+        config.trainer.logger = set_pl_logger(
+            config,
+        )
 
         # config.trainer.logger = True
 
@@ -226,6 +228,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         # Trainer(accelerator=”gpu”, devices=k, strategy=’dp’)
 
         if self.args.train:
+            # trainer.validate(model, tr_loader, ckpt_path=self.args.ckpt, verbose=True)
             trainer.fit(model, tr_loader, dv_loader, ckpt_path=self.args.ckpt)
         if self.args.eval:
             trainer.validate(model, dv_loader, ckpt_path=config.ckpt, verbose=True)

@@ -1,5 +1,6 @@
 import numpy
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -12,7 +13,7 @@ class AlphaNetwork(nn.Module):
             nn.Conv1d(
                 in_channels=self.feat_dim,
                 out_channels=self.feat_dim,
-                kernel_size=3,
+                kernel_size=5,
                 stride=1,
                 padding="same",
                 dilation=1,
@@ -26,6 +27,8 @@ class AlphaNetwork(nn.Module):
         )
 
     def forward(self, x):
+        # bsz, seq_len, hid_dim = x.shape
+        # return torch.ones(bsz, seq_len,1).type_as(x) * 1e-5
         assert x.shape[2] == self.feat_dim
         x = x.permute(0, 2, 1)
         # x (bsz, hid_dim, seq_len,)
@@ -193,21 +196,188 @@ class CIF(nn.Module):
             return output_c, len_tensor
 
 
+class CIF_Forced(nn.Module):
+    def __init__(
+        self,
+        audio_feat_dim: int,
+        beta: float = 1.0,
+        output_length: int = 8,
+    ):
+        super().__init__()
+        self.audio_feat_dim = audio_feat_dim
+
+        # threshold (default=1.0)
+        self.beta = beta
+        self.weight_network = AlphaNetwork(feat_dim=self.audio_feat_dim)
+        self.output_length = output_length
+
+    def forward(
+        self,
+        encoder_outputs,
+        encoder_lens=None,
+        cal_q_loss: bool = False,
+        returnAlphas: bool = False,
+    ):
+        device = encoder_outputs.device
+        # encoder_outputs = (bsz,seq_len,hid_dim)
+        assert encoder_outputs.shape[2] == self.audio_feat_dim
+        bsz, seq_len = encoder_outputs.shape[:2]
+
+        if encoder_lens is not None:
+            assert encoder_lens.shape[0] == bsz
+            for x in encoder_lens:
+                assert x >= self.output_length, (x, self.output_length)
+
+        alphas = self.weight_network(encoder_outputs)
+        assert alphas.shape == (bsz, seq_len, 1), alphas.shape
+
+        if encoder_lens is not None:
+            enc_output_msk = (
+                (
+                    torch.arange(seq_len)[None, :].to(device)
+                    < encoder_lens.view(bsz, 1)[:, None]
+                )
+                .squeeze()
+                .bool()
+            )
+        else:
+            enc_output_msk = torch.ones((bsz, seq_len)).bool().to(device)
+
+        # if self.cal_quantity_loss:
+        #     assert (
+        #         target_length is not None
+        #     ), "target_length cannot be None to calculate quantity_loss"
+        #     quantity_loss = self.quantity_loss_criteria(
+        #         torch.sum(alphas.view(bsz, seq_len) * enc_output_msk, dim=-1),
+        #         target_length,
+        #     )
+
+        # force scaling to desired output length
+
+        alphas = alphas.view(bsz, seq_len)
+        assert alphas.shape == enc_output_msk.shape
+
+        # original_alphas = alphas
+
+        if cal_q_loss:
+            q_loss = F.mse_loss(
+                torch.sum(alphas * enc_output_msk, dim=-1),
+                torch.FloatTensor([self.output_length for _ in range(bsz)]).type_as(
+                    alphas
+                ),
+            )
+
+        alphas = (
+            alphas
+            / torch.sum(alphas * enc_output_msk, dim=-1, keepdim=True)
+            * self.output_length
+        )
+
+        alphas[~enc_output_msk] = 0.0
+
+        alphas = alphas.view(bsz, seq_len, 1)
+
+        output_c = []
+        max_c_len = 0
+        for bsz_i in range(bsz):
+            alpha = alphas[bsz_i, :, :]
+            h = encoder_outputs[bsz_i, :, :]
+            alpha_accum = [torch.zeros((1,)).to(device)]
+            h_accum = [torch.zeros((self.audio_feat_dim,)).to(device)]
+            c = []
+
+            assert alpha.shape == (seq_len, 1)
+            assert h.shape == (seq_len, self.audio_feat_dim)
+
+            for u in range(1, seq_len + 1):
+                # print("u=",u)
+                if encoder_lens is not None:
+                    if u > encoder_lens[bsz_i]:
+                        break
+                # u : current timestep (start from 1 to seq_len)
+                alpha_u = alpha[u - 1]
+                h_u = h[u - 1, :]
+                # assert alpha_u <= 1.0, (alpha_u,encoder_lens[bsz_i],alpha,original_alphas[bsz_i])
+                # print("currrent alpha",alpha_u.item())
+
+                # alpha^a_u = alpha^a_(u-1) + alpha_u
+                alpha_accum_u = alpha_accum[u - 1] + alpha_u
+                alpha_accum.append(alpha_accum_u)
+
+                assert len(alpha_accum)
+
+                # print("alpha_accum_u",alpha_accum_u.item())
+
+                if alpha_accum_u < self.beta - 1e-5:
+                    # no boundary is located
+                    # h^a_u = h^a_(u-1) + alpha_u * h_u
+                    h_accum.append(h_accum[u - 1] + alpha_u * h_u)
+                else:
+                    # boundary located
+                    # divide alpha into 2 parts : alpha_u1 and alpha_u2
+
+                    alpha_u1 = 1 - alpha_accum[u - 1]
+
+                    c.append(h_accum[u - 1] + alpha_u1 * h_u)
+
+                    alpha_u2 = alpha_u - alpha_u1
+                    while alpha_u2 > self.beta:
+                        # alpha_u2 still > beta
+                        c.append(self.beta * h_u)
+                        alpha_u2 = alpha_u2 - self.beta
+
+                    # print("[Fired] split {} = {} + {}".format(alpha_u.item(),alpha_u1.item(),alpha_u2.item()))
+                    alpha_accum_u = alpha_u2
+                    alpha_accum[-1] = alpha_accum_u
+                    h_accum.append(alpha_u2 * h_u)
+
+            # assert alpha_accum[-1] == 0, alpha_accum[-1]
+            if alpha_accum[-1] > 0.999:
+                # due to precision problem
+                # we must fire here
+                c.append(h_accum[-1])
+
+            # print("alpha_accum[-1]",alpha_accum[-1])
+
+            c = torch.stack(c)
+            max_c_len = max(max_c_len, c.shape[0])
+            output_c.append(c)
+
+        output_c = torch.stack(output_c, dim=0)
+        assert output_c.shape == (bsz, self.output_length, self.audio_feat_dim)
+
+        if returnAlphas:
+            if cal_q_loss:
+                return output_c, q_loss, alphas
+            else:
+                return output_c, alphas
+        else:
+            if cal_q_loss:
+                return output_c, q_loss
+            else:
+                return output_c
+
+
 if __name__ == "__main__":
-    bsz = 8
+    bsz = 4
     audio_dim = 512
-    seq_len = 70
-    cif = CIF(
+    seq_len = 9
+    # cif = CIF(
+    #     audio_feat_dim=512,
+    #     beta=1.0,
+    #     scaling_stragety=True,
+    #     cal_quantity_loss=True,
+    #     tail_handling=True,
+    # )
+    cif = CIF_Forced(
         audio_feat_dim=512,
         beta=1.0,
-        scaling_stragety=True,
-        cal_quantity_loss=True,
-        tail_handling=True,
+        output_length=8,
     )
     opt = torch.optim.SGD(cif.parameters(), lr=0.1)
 
     audio_input = torch.randn(bsz, seq_len, audio_dim)
-    audio_input_lens = torch.randint(4, seq_len, (bsz,))
+    audio_input_lens = torch.randint(8, seq_len, (bsz,))
 
     audio_input = audio_input.cuda()
     audio_input_lens = audio_input_lens.cuda()
@@ -217,12 +387,20 @@ if __name__ == "__main__":
         cif = cif.cuda()
 
         opt.zero_grad()
-        output_c, audio_input_lens1, q_loss = cif(
+        # output_c, audio_input_lens1, q_loss = cif(
+        #     encoder_outputs=audio_input,
+        #     encoder_lens=None,
+        #     target_length=audio_input_lens - 2,
+        # )
+
+        # forced version
+        output_c, alphas = cif(
             encoder_outputs=audio_input,
-            encoder_lens=None,
-            target_length=audio_input_lens - 2,
+            encoder_lens=audio_input_lens,
+            returnAlphas=True,
         )
 
+        exit(1)
         q_loss.backward()
         opt.step()
 

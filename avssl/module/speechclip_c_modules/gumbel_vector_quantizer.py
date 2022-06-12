@@ -5,6 +5,8 @@
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -284,21 +286,21 @@ class SimpleVectorQuantizer(nn.Module):
                 temp = temp.replace("learnable=", "")
                 temp = ast.literal_eval(temp)
                 self.curr_temp = nn.parameter.Parameter(torch.FloatTensor([temp]))
-                logging.warning("Setting vq temp learnable (init={})".format(temp))
+                logger.info("Setting vq temp learnable (init={})".format(temp))
             elif temp.startswith("fixed="):
                 self.temp_type = "fixed"
                 temp = temp.replace("fixed=", "")
                 temp = ast.literal_eval(temp)
                 self.register_buffer("curr_temp", torch.FloatTensor([temp]))
                 # self.curr_temp = torch.FloatTensor([temp])
-                logging.warning("Setting vq temp fixed={}".format(temp))
+                logger.info("Setting vq temp fixed={}".format(temp))
             else:
                 self.temp_type = "scheduled"
                 temp = ast.literal_eval(temp)
                 assert len(temp) == 3, f"{temp}, {len(temp)}"
 
                 self.max_temp, self.min_temp, self.temp_decay = temp
-                logging.warning("Setting vq temp scheduled = ({},{},{})".format(*temp))
+                logger.info("Setting vq temp scheduled = ({},{},{})".format(*temp))
                 self.curr_temp = self.max_temp
         self.codebook_indices = None
 

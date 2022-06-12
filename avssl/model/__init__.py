@@ -1,3 +1,4 @@
+from .kwClip import *
 from .speechclip_c import *
 from .speechclip_p import (
     ParallelClipTextImage,

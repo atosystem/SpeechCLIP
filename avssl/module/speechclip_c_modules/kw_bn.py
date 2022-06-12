@@ -1,5 +1,6 @@
 import logging
 
+logger = logging.getLogger(__name__)
 import torch
 from torch import nn
 
@@ -40,7 +41,7 @@ class Kw_BatchNorm(nn.Module):
             self.std_scale = [self.std_scale] * self.kw_num
 
         self.init_bn(init_bias, init_scale)
-        logging.warning(
+        logger.info(
             "Initialize BatchNorm({}) weight and bias learnable=({}) with token embeddings w/ scale={}, parallel=({})".format(
                 self.batchnorm_type, self.learnable, self.std_scale, self.parallel
             )
@@ -68,7 +69,7 @@ class Kw_BatchNorm(nn.Module):
             self.bn_layer.weight.requires_grad = self.learnable
             self.bn_layer.bias.requires_grad = self.learnable
 
-    def forward(self, keywords,seq_lens=None):
+    def forward(self, keywords, seq_lens=None):
         assert keywords.dim() == 3
         assert keywords.shape[2] == self.kw_dim
         if seq_lens is None:
@@ -105,18 +106,20 @@ class Kw_BatchNorm(nn.Module):
 
                 seq_lens = seq_lens.tolist()
 
-                offsets = [0] 
+                offsets = [0]
                 for b_i in range(keywords.size(0)):
-                    kw_flatten.append(keywords[b_i,:seq_lens[b_i]].view(seq_lens[b_i],-1))
+                    kw_flatten.append(
+                        keywords[b_i, : seq_lens[b_i]].view(seq_lens[b_i], -1)
+                    )
                     offsets.append(offsets[-1] + seq_lens[b_i])
-                kw_flatten = torch.cat(kw_flatten,dim=0)
+                kw_flatten = torch.cat(kw_flatten, dim=0)
                 assert kw_flatten.size(0) == sum(seq_lens)
                 # kw_flatten shape [#total kws, kw_dim]
                 kw_flatten = self.bn_layer(kw_flatten)
 
-                for b_i, (st_i, ed_i) in enumerate(zip(offsets[:-1],offsets[1:])):
+                for b_i, (st_i, ed_i) in enumerate(zip(offsets[:-1], offsets[1:])):
                     assert seq_lens[b_i] == ed_i - st_i
-                    keywords[b_i,:seq_lens[b_i]] = kw_flatten[st_i:ed_i]
+                    keywords[b_i, : seq_lens[b_i]] = kw_flatten[st_i:ed_i]
 
                 # keywords = self.bn_layer(keywords.permute(0, 2, 1)).permute(0, 2, 1)
         else:

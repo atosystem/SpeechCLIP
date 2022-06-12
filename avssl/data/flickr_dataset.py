@@ -100,6 +100,8 @@ class FlickrDataset(BaseDataset):
         assert len(modalities) > 0, "Dataset's modalities cannot be none"
         self.modalities = modalities
 
+        exclude_files = []
+
         image_list_txt = os.path.join(
             self.dataset_root, f"Flickr_8k.{self.split}Images.txt"
         )
@@ -189,7 +191,11 @@ class FlickrDataset(BaseDataset):
                             _subID = int(
                                 os.path.basename(p).split("_")[-1].replace(".wav", "")
                             )
-
+                            if (
+                                "{}_{}".format(filename2Id[image_name], _subID)
+                                in exclude_files
+                            ):
+                                continue
                             if "audio" in self.modalities:
                                 _entry["wav"] = p
                             if "image" in self.modalities:

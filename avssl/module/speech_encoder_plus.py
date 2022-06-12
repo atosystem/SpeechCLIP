@@ -1,4 +1,7 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import List, Tuple, Union
 
 import torch
@@ -7,9 +10,12 @@ from torch import nn
 
 from ..data import random_crop_max_length
 from ..util import freeze_model, init_weights
+from .weighted_sum import WeightedSumLayer
+
+FEAT_SELECT_IDX_WEIGHTED_SUM_MODE = "weighted_sum"
 
 
-class S3prlSpeechEncoder(nn.Module):
+class S3prlSpeechEncoderPlus(nn.Module):
     def __init__(
         self,
         name: str,
@@ -100,20 +106,34 @@ class S3prlSpeechEncoder(nn.Module):
                 self.encoder.model.feature_grad_mult = 0
 
         self.out_dim = 0
+        self.upstream_model_hiddenstates_len = 0
         with torch.no_grad():
             wav = [torch.randn(16000, dtype=torch.float, device=device)]
             feat = self.encoder(wav)
             self.out_dim = feat["last_hidden_state"].shape[2]
+            self.upstream_model_hiddenstates_len = len(feat["hidden_states"])
 
-        logging.info(
+        logger.info(
             f"Loaded s3prl speech encoder ({name}): out_dim = {self.out_dim} layer_drop = {self.encoder.model.encoder.layerdrop}"
         )
+
+        if self.feat_select_idx == FEAT_SELECT_IDX_WEIGHTED_SUM_MODE:
+            logger.info(
+                f"Using weighted sum for all hiddenstates({self.upstream_model_hiddenstates_len})"
+            )
+            assert self.upstream_model_hiddenstates_len > 0
+
+            self.weightedsum_layer = WeightedSumLayer(
+                n_weights=self.upstream_model_hiddenstates_len,
+            )
 
     def trainable_params(self) -> list:
         if self.trainable and len(self.reinit_layers) == 0:
             return list(self.parameters())
         if self.trainable and len(self.reinit_layers) > 0:
             params = []
+            if self.feat_select_idx == "weighted_sum":
+                params += list(self.weightedsum_layer.parameters())
             for i in self.reinit_layers:
                 params += list(self.encoder.model.encoder.layers[i].parameters())
             if not self.encoder.model.encoder.layer_norm_first:
@@ -127,6 +147,7 @@ class S3prlSpeechEncoder(nn.Module):
         wav: Union[torch.Tensor, list],
         wav_len: Union[torch.Tensor, list] = [],
         feat_select_idx: Union[str, list] = None,
+        return_hidden_states: bool = False,
     ) -> Tuple[Union[torch.Tensor, list], torch.Tensor]:
         """Forward function for S3PRL speech encoder
 
@@ -176,15 +197,23 @@ class S3prlSpeechEncoder(nn.Module):
         if feat_select_idx is None:
             feat_select_idx = self.feat_select_idx
 
+        return_list = []
         if feat_select_idx == "all":
-            return feat, feat_len
+            return_list = [feat, feat_len]
+        elif feat_select_idx == FEAT_SELECT_IDX_WEIGHTED_SUM_MODE:
+            return_list = [self.weightedsum_layer(feat["hidden_states"]), feat_len]
         elif isinstance(feat_select_idx, list):
             feat = [feat["hidden_states"][i] for i in feat_select_idx]
-            return feat, feat_len
+            return_list = [feat, feat_len]
         elif feat_select_idx in feat:
-            return feat[feat_select_idx], feat_len
+            return_list = [feat[feat_select_idx], feat_len]
         else:
             raise KeyError(feat_select_idx)
+
+        if return_hidden_states:
+            return_list.append(feat["hidden_states"])
+
+        return tuple(return_list)
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
