@@ -40,6 +40,13 @@ from .base_model import BaseLightningModel
 
 __all__ = ["KWClip_GeneralTransformer"]
 
+METRIC_REDUCEFN_MAPPING = {
+    torch.Tensor: lambda x: torch.mean(x),
+    float: lambda x: x,
+    int: lambda x: x,
+    str: lambda x: x,
+}
+
 
 def load_fastvgs(
     model_type: str = "fast-vgs-plus",
@@ -146,7 +153,12 @@ class KWClipBase(BaseLightningModel):
                 log_metrics = outputs["log_metrics"]
                 result = {
                     **{f"train_{k}": losses[k] for k in losses},
-                    **{f"train_{k}": torch.mean(log_metrics[k]) for k in log_metrics},
+                    **{
+                        f"train_{k}": METRIC_REDUCEFN_MAPPING[type(log_metrics[k])](
+                            log_metrics[k]
+                        )
+                        for k in log_metrics
+                    },
                 }
                 self.log_dict(
                     result,
@@ -195,7 +207,12 @@ class KWClipBase(BaseLightningModel):
         log_metrics = outputs["log_metrics"]
         result = {
             **{f"val_{k}": losses[k] for k in losses},
-            **{f"val_{k}": torch.mean(log_metrics[k]) for k in log_metrics},
+            **{
+                f"val_{k}": METRIC_REDUCEFN_MAPPING[type(log_metrics[k])](
+                    log_metrics[k]
+                )
+                for k in log_metrics
+            },
         }
         self.log_dict(
             result,
