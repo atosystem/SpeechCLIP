@@ -841,26 +841,47 @@ class KW_ParallelBranch(nn.Module):
         self.out_dim = out_dim
 
         assert hasattr(
-            TransformerModels, config.model_settings.cascaded_branch.transformer_type
+            TransformerModels, config.model_settings.parallel_branch.transformer_type
         )
         logger.info(
-            f"Using {config.model_settings.cascaded_branch.transformer_type} as KW_CascadedBranch"
+            f"Using {config.model_settings.parallel_branch.transformer_type} as KW_ParallelBranch"
         )
         self.self_att = getattr(
-            TransformerModels, config.model_settings.cascaded_branch.transformer_type
-        )(**config.model_settings.cascaded_branch.transformer_args)
+            TransformerModels, config.model_settings.parallel_branch.transformer_type
+        )(**config.model_settings.parallel_branch.transformer_args)
+
+        self.cls = self._create_cls()
+        logger.info("Start init [CLS] {}".format(self.cls.shape))
 
         self.linear_proj = nn.Linear(self.audio_dim, self.out_dim)
 
-    def forward(self, audio_feat, audio_len):
-        # Use multi-head attention layer to find keywords(cls)
-        bsz, total_max_len = audio_feat.size(0), audio_feat.size(1)
-
-        key_padding_mask = get_keypadding_mask(
-            max_length=total_max_len, data_lens=audio_len
+    def _create_cls(self):
+        # first cls for parallel objective
+        return torch.nn.Parameter(
+            torch.randn(
+                [
+                    1,
+                    1,
+                    self.config.model_settings.parallel_branch.transformer_args.d_model,
+                ]
+            )
         )
 
-        out = self.self_att(src=audio_feat, key_padding_mask=key_padding_mask)
+    def forward(self, audio_feat, audio_len):
+        # Use multi-head attention layer to find keywords(cls)
+        bsz, total_max_len = (
+            audio_feat.size(0),
+            audio_feat.size(1) + 1,
+        )
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = get_keypadding_mask(
+            max_length=total_max_len,
+            data_lens=audio_len + 1,
+        )
+
+        out = self.self_att(src=src, key_padding_mask=key_padding_mask)
 
         out = out[:, :1].reshape(-1, self.audio_dim)
 

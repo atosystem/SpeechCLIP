@@ -23,7 +23,7 @@ class TransformerEncoder(nn.Module):
     ) -> None:
         super().__init__()
 
-        logger.info(f"Using {n_layers} layer transformer decoder")
+        logger.info(f"Using {n_layers} layer transformer encoder")
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,

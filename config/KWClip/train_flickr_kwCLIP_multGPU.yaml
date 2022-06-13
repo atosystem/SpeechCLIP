@@ -7,13 +7,13 @@ data:
     load_image: true
     load_audio: true
     tokenizeText: true
-  batch_size: 64
+  batch_size: 256
   dev_batch_size: 8
   split_ratio: 0.9
 
 model_settings:
-  cascaded_objective_weight: 1.0
-  parallel_objective_weight: 0.0
+  cascaded_objective_weight: 0.5
+  parallel_objective_weight: 0.5
   parallel_branch: 
     # name: integrate # [ "integrate", "individual" ]
     # integrate: add another [CLS] token for parallel objective
@@ -31,12 +31,12 @@ model_settings:
         norm_first: False
 
   cascaded_branch:
-    type: KW_CascadedBranch #KW_CascadedBranch_Integrated
-    transformer_type: TransformerEncoder #[TransformerEncoder, RelTransformerEncoder, MultiheadAttentionAndNorm]
+    type: KW_CascadedBranch #KW_CascadedBranch #KW_CascadedBranch_Integrated
+    transformer_type: MultiheadAttentionAndNorm #[TransformerEncoder, RelTransformerEncoder, MultiheadAttentionAndNorm]
     transformer_args:
-        n_layers: 2
+        n_layers: 1
         d_model: 768
-        nhead: 8
+        nhead: 1
         dim_feedforward: 3072
         dropout: 0.1
         activation: gelu
@@ -129,8 +129,8 @@ trainer:
 
 log_setting:
   log_detokenize_results: true # whether or not to save the results of detokenized vq output
-  log_detokenize_results_every_n_epoch: 5
-  log_draw_pca_every_n_epoch: 10
+  log_detokenize_results_every_n_epoch: 20
+  log_draw_pca_every_n_epoch: 50
 
 logger:
-  project: kw-general_test
+  project: kw-general
