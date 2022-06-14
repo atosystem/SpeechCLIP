@@ -508,6 +508,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         wav: Union[torch.Tensor, list],
         wav_len: Union[torch.Tensor, list] = [],
         feat_select_idx: Union[str, list] = None,
+        return_hidden_states: bool = False,
     ) -> Tuple[Union[torch.Tensor, list], torch.Tensor]:
         """Forward function for S3PRL speech encoder
         Args:
@@ -574,14 +575,22 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         if feat_select_idx is None:
             feat_select_idx = self.feat_select_idx
 
+        return_list = []
         if feat_select_idx == "all":
-            return feat, feat_len
+            return_list.extend([feat, feat_len])
         elif feat_select_idx == FEAT_SELECT_IDX_WEIGHTED_SUM_MODE:
-            return self.weightedsum_layer(feat["hidden_states"]), feat_len
+            return_list.extend(
+                [self.weightedsum_layer(feat["hidden_states"]), feat_len]
+            )
         elif isinstance(feat_select_idx, list):
             feat = [feat["hidden_states"][i] for i in feat_select_idx]
-            return feat, feat_len
+            return_list.extend([feat, feat_len])
         elif feat_select_idx in feat:
-            return feat[feat_select_idx], feat_len
+            return_list.extend([feat[feat_select_idx], feat_len])
         else:
             raise KeyError(feat_select_idx)
+
+        if return_hidden_states:
+            return_list.append(feat["hidden_states"])
+
+        return tuple(return_list)

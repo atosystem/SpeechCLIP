@@ -116,10 +116,11 @@ class KWClipBase(BaseLightningModel):
     ) -> Union[Tuple[Union[torch.Tensor, list], torch.Tensor], torch.Tensor]:
 
         if self.audio_encoder_type in ["s3prl_plus", "FairseqHubert"]:
-            audio_feat, audio_feat_len = self.audio_encoder(wav, wav_len)
+            return self.audio_encoder(
+                wav, wav_len, return_hidden_states=return_hidden_states
+            )
         else:
             raise NotImplementedError("Unknown type:{}".format(self.audio_encoder_type))
-        return audio_feat, audio_feat_len
 
     def forward(self, batch, cal_loss: bool = True):
         raise NotImplementedError()
@@ -572,6 +573,8 @@ class KWClipBase(BaseLightningModel):
 
     def processWavs(self, wav):
         wav_len = [len(x) for x in wav]
+        if isinstance(wav, torch.Tensor):
+            wav_len = torch.LongTensor(wav_len, device=wav.device)
         return wav, wav_len
 
     def feature_extractor_s3prl(
@@ -703,6 +706,22 @@ class KW_CascadedBranch(nn.Module):
             )
         )
 
+    def extract_hidden_states(self, audio_feat, audio_len):
+        bsz, total_max_len = audio_feat.size(0), audio_feat.size(1) + self.keyword_num
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = get_keypadding_mask(
+            max_length=total_max_len, data_lens=audio_len + self.keyword_num
+        )
+
+        hidden_states = self.self_att.extract_hidden_states(
+            src=src, key_padding_mask=key_padding_mask
+        )
+        hidden_states = [x[:, self.keyword_num, ...] for x in hidden_states]
+
+        return tuple(hidden_states)
+
     def forward(self, audio_feat, audio_len):
         # Use multi-head attention layer to find keywords(cls)
         bsz, total_max_len = audio_feat.size(0), audio_feat.size(1) + self.keyword_num
@@ -773,6 +792,24 @@ class KW_CascadedBranch_Integrated(KW_CascadedBranch):
                 ]
             )
         )
+
+    def extract_hidden_states(self, audio_feat, audio_len):
+        bsz, total_max_len = (
+            audio_feat.size(0),
+            audio_feat.size(1) + self.keyword_num + 1,
+        )
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = get_keypadding_mask(
+            max_length=total_max_len, data_lens=audio_len + self.keyword_num + 1
+        )
+
+        hidden_states = self.self_att.extract_hidden_states(
+            src=src, key_padding_mask=key_padding_mask
+        )
+        hidden_states = [x[:, self.keyword_num + 1 :, ...] for x in hidden_states]
+        return tuple(hidden_states)
 
     def forward(self, audio_feat, audio_len):
         # Use multi-head attention layer to find keywords(cls)
@@ -867,6 +904,21 @@ class KW_ParallelBranch(nn.Module):
             )
         )
 
+    def extract_hidden_states(self, audio_feat, audio_len):
+        bsz, total_max_len = audio_feat.size(0), audio_feat.size(1) + 1
+        cls = torch.cat([self.cls] * bsz, dim=0)
+        src = torch.cat([cls, audio_feat], dim=1)
+
+        key_padding_mask = get_keypadding_mask(
+            max_length=total_max_len, data_lens=audio_len + 1
+        )
+
+        hidden_states = self.self_att.extract_hidden_states(
+            src=src, key_padding_mask=key_padding_mask
+        )
+        hidden_states = [x[:, 1:, ...] for x in hidden_states]
+        return tuple(hidden_states)
+
     def forward(self, audio_feat, audio_len):
         # Use multi-head attention layer to find keywords(cls)
         bsz, total_max_len = (
@@ -947,7 +999,29 @@ class KWClip_GeneralTransformer(KWClipBase):
         return _params
 
     def feature_extractor_s3prl(self, wav):
-        pass
+        wav, wav_len = self.processWavs(wav)
+
+        audio_feat, audio_len, hidden_states = self.forward_audio(
+            wav, wav_len, return_hidden_states=True
+        )
+        assert isinstance(hidden_states, tuple)
+
+        cascaded_hidden_states = None
+        parallel_hidden_states = None
+        if self.cascaded_branch is not None:
+            cascaded_hidden_states = self.cascaded_branch.extract_hidden_states(
+                audio_feat, audio_len
+            )
+            assert isinstance(cascaded_hidden_states, tuple)
+            hidden_states = hidden_states + tuple(cascaded_hidden_states[1:])
+        if self.parallel_branch is not None:
+            parallel_hidden_states = self.parallel_branch.extract_hidden_states(
+                audio_feat, audio_len
+            )
+            assert isinstance(parallel_hidden_states, tuple)
+            hidden_states = hidden_states + tuple(parallel_hidden_states[1:])
+
+        return None, hidden_states
 
     def compute_loss(self, input_feats):
         """compute the loss here
