@@ -142,6 +142,8 @@ class BaseDataset(Dataset):
         # assert split in {"train", "dev", "test"}
         self.split = split
 
+        t = Template(dataset_root)
+        dataset_root = t.safe_substitute(CURRENT_USERNAME=os.getenv("CURRENT_USERNAME"))
         self.dataset_root = dataset_root
         self.dataset_json_file = dataset_json_file
         self.audio_transform = audio_transform
