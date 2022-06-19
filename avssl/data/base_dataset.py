@@ -1,7 +1,9 @@
 # Ref: https://github.com/wnhsu/ResDAVEnet-VQ/blob/master/dataloaders/image_caption_dataset.py
 # Author: David Harwath, Wei-Ning Hsu
 
+import os
 import pickle
+from string import Template
 from typing import List, Union
 
 import clip
@@ -26,6 +28,10 @@ class BaseImageCaptionDataset(Dataset):
     ):
         assert split in {"train", "dev", "test"}
         self.split = split
+
+
+        t = Template(dataset_root)
+        dataset_root = t.safe_substitute(CURRENT_USERNAME=os.getenv("CURRENT_USERNAME"))
 
         self.dataset_root = dataset_root
         self.dataset_json_file = dataset_json_file
