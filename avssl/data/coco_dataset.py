@@ -25,6 +25,7 @@ class CoCoDataset(BaseDataset):
         load_image: bool = True,
         wav_rm_silence: bool = False,
         clip_image_transform: str = None,
+        split_prefix: str = "SpokenCOCO",
         **kwargs,
     ):
         if clip_image_transform is not None:
@@ -49,7 +50,7 @@ class CoCoDataset(BaseDataset):
         assert self.split in ["train", "val"]
 
         data_json_path = os.path.join(
-            self.dataset_root, "SpokenCOCO", f"SpokenCOCO_{self.split}.json"
+            self.dataset_root, "SpokenCOCO", f"{split_prefix}_{self.split}.json"
         )
         with open(data_json_path, "r") as f:
             raw_data = json.load(f)["data"]
