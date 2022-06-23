@@ -29,7 +29,6 @@ class BaseImageCaptionDataset(Dataset):
         assert split in {"train", "dev", "test"}
         self.split = split
 
-
         t = Template(dataset_root)
         dataset_root = t.safe_substitute(CURRENT_USERNAME=os.getenv("CURRENT_USERNAME"))
 

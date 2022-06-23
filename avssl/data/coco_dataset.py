@@ -47,11 +47,12 @@ class CoCoDataset(BaseDataset):
         assert len(modalities) > 0, "Dataset's modalities cannot be none"
         self.modalities = modalities
 
-        assert self.split in ["train", "val"]
+        assert self.split in ["train", "val", "test"]
 
         data_json_path = os.path.join(
             self.dataset_root, "SpokenCOCO", f"{split_prefix}_{self.split}.json"
         )
+        logger.info(f"data_json_path {data_json_path}")
         with open(data_json_path, "r") as f:
             raw_data = json.load(f)["data"]
 

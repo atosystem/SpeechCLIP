@@ -340,6 +340,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         max_audio_len: int = -1,
         reinit_layers: List[int] = [],
         unfreeze_layers: List[int] = [],
+        normalize_hiddenstates: bool = False,
         **kwargs,
     ):
         """Speech Encoder with S3PRL (v0.3.1)
@@ -364,6 +365,9 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         self.max_audio_len = max_audio_len
         self.reinit_layers = reinit_layers
         self.unfreeze_layers = unfreeze_layers
+        self.normalize_hiddenstates = normalize_hiddenstates
+        if self.normalize_hiddenstates:
+            logger.info("Normalize hidden states")
 
         ckpt = _urls_to_filepaths(self.MODEL2URL[self.name], refresh=False)
 
@@ -458,6 +462,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
 
             self.weightedsum_layer = WeightedSumLayer(
                 n_weights=self.upstream_model_hiddenstates_len,
+                normalize_features=self.normalize_hiddenstates,
             )
 
     def trainable_params(self) -> list:
@@ -554,6 +559,16 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
                     padding_mask=wav_padding_mask,
                     mask=None,
                 )
+
+        if self.normalize_hiddenstates:
+            pass
+            # for i in range(len(features["layer_results"])):
+            # method1
+            # features["layer_results"][i] = features["layer_results"][i] / (torch.norm(features["layer_results"][i],dim=-1,keepdim=True)+ 1e-8)
+            # method2
+            # features["layer_results"][i] = features["layer_results"][i] / torch.mean(torch.norm(features["layer_results"][i],dim=-1),dim=-1).view(-1,1,1)
+            # s3prl
+            # stacked_feature = F.layer_norm(stacked_feature, (stacked_feature.shape[-1],))
 
         feat = {
             "last_hidden_state": features["layer_results"][-1],

@@ -123,7 +123,7 @@ class SupConLoss(nn.Module):
         return loss
 
 
-MAX_EYE = 256
+MAX_EYE = 1024
 
 
 class MaskedContrastiveLoss(nn.Module):

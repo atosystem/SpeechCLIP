@@ -127,6 +127,12 @@ class TrainSpeechClipBaseTask(BaseTask):
                     modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
+            if self.args.test:
+                test_set = CoCoDataset(
+                    split="test",
+                    modalities=["audio", "image", "text"],
+                    **config.data.dataset,
+                )
 
         else:
             raise NotImplementedError(f"Unknown dataset {config.data.dataset.name}")
@@ -229,10 +235,10 @@ class TrainSpeechClipBaseTask(BaseTask):
         if self.args.eval:
             trainer.validate(model, dv_loader, ckpt_path=config.ckpt, verbose=True)
         if self.args.test:
-            test_func = getattr(trainer, "test", None)
-            if callable(test_func):
-                # test utility is implemented and callable
-                trainer.test(model, test_loader, ckpt_path=config.ckpt)
-            else:
-                # use validate function instead.
-                trainer.validate(model, test_loader, ckpt_path=config.ckpt)
+            # test_func = getattr(model, "test_step", None)
+            # if callable(test_func):
+            #     # test utility is implemented and callable
+            #     trainer.test(model, test_loader, ckpt_path=config.ckpt)
+            # else:
+            #     # use validate function instead.
+            trainer.validate(model, test_loader, ckpt_path=config.ckpt)

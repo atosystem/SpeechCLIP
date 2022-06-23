@@ -125,4 +125,4 @@ class MultiheadAttentionAndNorm(nn.Module):
         )
 
     def extract_hidden_states(self, src: torch.Tensor, key_padding_mask: torch.Tensor):
-        return tuple([src,self.forward(src, key_padding_mask)])
+        return tuple([src, self.forward(src, key_padding_mask)])

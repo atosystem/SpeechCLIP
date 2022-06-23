@@ -555,9 +555,9 @@ class KWClipBase(BaseLightningModel):
             recall_at=self.recall_at,
         )
 
-        print("recall_results_AI",recall_results_AI)
-        print("val_recall_IA",recall_results_IA)
-        print("val_recall_mean",recall_results_mean)
+        print("recall_results_AI", recall_results_AI)
+        print("val_recall_IA", recall_results_IA)
+        print("val_recall_mean", recall_results_mean)
 
         if isinstance(self.logger, WandbLogger):
             self.log("val_recall_AI", recall_results_AI, sync_dist=True)
@@ -722,7 +722,7 @@ class KW_CascadedBranch(nn.Module):
         hidden_states = self.self_att.extract_hidden_states(
             src=src, key_padding_mask=key_padding_mask
         )
-        hidden_states = [x[:, self.keyword_num:, ...] for x in hidden_states]
+        hidden_states = [x[:, self.keyword_num :, ...] for x in hidden_states]
 
         return tuple(hidden_states)
 
@@ -1029,20 +1029,22 @@ class KWClip_GeneralTransformer(KWClipBase):
         # print(hidden_states[0].shape)
         # print(hidden_states[-1].shape)
         # if hidden_states[0].shape[0] > 1:
-            # assert hidden_states[0].shape[0] == 1
+        # assert hidden_states[0].shape[0] == 1
         # import uuid
         # import glob
 
-        # current_files_num = len(list(glob.glob("/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_multiAtt_c_flickr_1/*.pt")))
+        # current_files_num = len(list(glob.glob("/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/*.pt")))
         # if current_files_num >= 51094:
         #     print("Finish")
         #     exit(1)
 
         # hubert_states = torch.stack(hidden_states).view(14,-1,768)
-        # gap = torch.mean(torch.norm(hubert_states[:-1,...] - hubert_states[-1,...],dim=-1),dim=-1)
+        # hubert_states = torch.mean(torch.norm(hubert_states,dim=-1),dim=-1)
+        # assert hubert_states.shape == (14,)
+        # # gap = torch.mean(torch.norm(hubert_states[:-1,...] - hubert_states[-1,...],dim=-1),dim=-1)
         # # print(hubert_states.shape)
         # # exit(1)
-        # torch.save(gap.cpu(),f"/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_multiAtt_c_flickr_1/{uuid.uuid4()}.pt")
+        # torch.save(hubert_states.cpu(),f"/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/{uuid.uuid4()}.pt")
 
         return hidden_states[-1], hidden_states
 
