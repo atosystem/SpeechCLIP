@@ -8,6 +8,7 @@ from typing import List, Union
 
 import clip
 import librosa
+import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -123,6 +124,7 @@ class BaseDataset(Dataset):
         load_audio: bool = True,
         load_image: bool = True,
         tokenizeText: bool = True,
+        normalize_waveform: bool = False,
         **kwargs,
     ):
         """init
@@ -151,6 +153,7 @@ class BaseDataset(Dataset):
         self.load_audio = load_audio
         self.load_image = load_image
         self.tokenizeText = tokenizeText
+        self.normalize_waveform = normalize_waveform
 
         self.data = []
 
@@ -166,6 +169,8 @@ class BaseDataset(Dataset):
 
         if self.load_audio:
             waveform, _ = librosa.load(path, sr=self.target_sr)
+            if self.normalize_waveform:
+                waveform = (waveform - np.mean(waveform)) / np.std(waveform)
             if self.audio_transform is not None:
                 audio = self.audio_transform(waveform)
             else:

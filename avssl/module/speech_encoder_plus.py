@@ -341,6 +341,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         reinit_layers: List[int] = [],
         unfreeze_layers: List[int] = [],
         normalize_hiddenstates: bool = False,
+        normalize_type: str = "s3prl",
         **kwargs,
     ):
         """Speech Encoder with S3PRL (v0.3.1)
@@ -366,8 +367,10 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         self.reinit_layers = reinit_layers
         self.unfreeze_layers = unfreeze_layers
         self.normalize_hiddenstates = normalize_hiddenstates
+        assert normalize_type in ["s3prl", "method1", "method2"], normalize_type
         if self.normalize_hiddenstates:
-            logger.info("Normalize hidden states")
+            logger.info("Normalize hidden states ({})".format(normalize_type))
+        self.normalize_type = normalize_type
 
         ckpt = _urls_to_filepaths(self.MODEL2URL[self.name], refresh=False)
 
@@ -462,7 +465,8 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
 
             self.weightedsum_layer = WeightedSumLayer(
                 n_weights=self.upstream_model_hiddenstates_len,
-                normalize_features=self.normalize_hiddenstates,
+                normalize_features=self.normalize_hiddenstates
+                and self.normalize_type == "s3prl",
             )
 
     def trainable_params(self) -> list:
@@ -561,14 +565,28 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
                 )
 
         if self.normalize_hiddenstates:
-            pass
-            # for i in range(len(features["layer_results"])):
-            # method1
-            # features["layer_results"][i] = features["layer_results"][i] / (torch.norm(features["layer_results"][i],dim=-1,keepdim=True)+ 1e-8)
-            # method2
-            # features["layer_results"][i] = features["layer_results"][i] / torch.mean(torch.norm(features["layer_results"][i],dim=-1),dim=-1).view(-1,1,1)
-            # s3prl
-            # stacked_feature = F.layer_norm(stacked_feature, (stacked_feature.shape[-1],))
+            # pass
+            if self.normalize_type.startswith("method"):
+                for i in range(len(features["layer_results"])):
+                    if self.normalize_type == "method1":
+                        # method1
+                        features["layer_results"][i] = features["layer_results"][i] / (
+                            torch.norm(
+                                features["layer_results"][i], dim=-1, keepdim=True
+                            )
+                            + 1e-8
+                        )
+                    elif self.normalize_type == "method2":
+                        # method2
+                        features["layer_results"][i] = features["layer_results"][
+                            i
+                        ] / torch.mean(
+                            torch.norm(features["layer_results"][i], dim=-1), dim=-1
+                        ).view(
+                            -1, 1, 1
+                        )
+                        # s3prl
+                        # stacked_feature = F.layer_norm(stacked_feature, (stacked_feature.shape[-1],))
 
         feat = {
             "last_hidden_state": features["layer_results"][-1],

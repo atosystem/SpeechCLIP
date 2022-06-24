@@ -20,7 +20,8 @@ class WeightedSumLayer(nn.Module):
         self.n_weights = n_weights
         self.weights = nn.Parameter(torch.zeros((n_weights,), dtype=torch.float))
         self.normalize_features = normalize_features
-        logger.info("Normalize feature before weighted sum")
+        if self.normalize_features:
+            logger.info("Normalize feature before weighted sum")
 
     def forward(self, x: List[torch.Tensor]) -> torch.Tensor:
         """Weighted sum a list of tensors.

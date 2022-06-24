@@ -58,9 +58,14 @@ class CoCoDataset(BaseDataset):
 
         for _entry in raw_data:
             if "audio" in self.modalities or "text" in self.modalities:
+                data_id = (
+                    _entry["reassign_id"]
+                    if split_prefix == "SpokenCOCO_ksplit"
+                    else int(_entry["image"].split("_")[-1].replace(".jpg", ""))
+                )
                 for _capion in _entry["captions"]:
                     _ent_data = {
-                        "id": int(_entry["image"].split("_")[-1].replace(".jpg", "")),
+                        "id": data_id,
                     }
 
                     if "audio" in self.modalities:
@@ -80,7 +85,7 @@ class CoCoDataset(BaseDataset):
                         "image": os.path.join(
                             self.dataset_root, "mscoco_img", _entry["image"]
                         ),
-                        "id": int(_entry["image"].split("_")[-1].replace(".jpg", "")),
+                        "id": data_id,
                     }
                 )
 
