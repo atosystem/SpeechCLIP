@@ -12,6 +12,8 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
+import logging
+logger = logging.getLogger(__name__)
 
 
 class BaseImageCaptionDataset(Dataset):
@@ -154,6 +156,8 @@ class BaseDataset(Dataset):
         self.load_image = load_image
         self.tokenizeText = tokenizeText
         self.normalize_waveform = normalize_waveform
+        if self.normalize_waveform:
+            logger.info("Normalize input waveform")
 
         self.data = []
 
