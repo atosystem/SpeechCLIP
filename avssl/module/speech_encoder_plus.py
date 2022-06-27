@@ -476,7 +476,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
             params = []
             for i in self.reinit_layers:
                 params += list(self.encoder.encoder.layers[i].parameters())
-            if not self.encoder.model.encoder.layer_norm_first:
+            if not self.encoder.encoder.layer_norm_first:
                 params += list(self.encoder.encoder.layer_norm.parameters())
             return params
         else:
