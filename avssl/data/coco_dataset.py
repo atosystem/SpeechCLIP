@@ -60,7 +60,7 @@ class CoCoDataset(BaseDataset):
             if "audio" in self.modalities or "text" in self.modalities:
                 data_id = (
                     _entry["reassign_id"]
-                    if split_prefix == "SpokenCOCO_ksplit"
+                    if split_prefix != "SpokenCOCO"
                     else int(_entry["image"].split("_")[-1].replace(".jpg", ""))
                 )
                 for _capion in _entry["captions"]:

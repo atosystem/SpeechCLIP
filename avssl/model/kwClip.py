@@ -507,6 +507,7 @@ class KWClipBase(BaseLightningModel):
             all_audo_feats.float().to(self.device),
             all_img_feats.float().T.to(self.device),
         )
+        score_per_audio = score_per_audio / 0.07
         score_per_image = score_per_audio.T
 
         # AI : Audio -> Image, IA: Image -> Audio

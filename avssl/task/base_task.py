@@ -178,7 +178,7 @@ class TrainSpeechClipBaseTask(BaseTask):
             dirpath=config.trainer.default_root_dir,
             filename="{epoch}-{step}-{val_loss:.4f}",
             monitor="val_loss",
-            save_top_k=2,
+            save_top_k=1,
             mode="min",
             every_n_epochs=1,
             save_last=True,
@@ -198,7 +198,7 @@ class TrainSpeechClipBaseTask(BaseTask):
         )
 
         # config.trainer.logger = True
-
+        config.gpus =  self.args.gpus
         trainer = Trainer(
             callbacks=[
                 TQDMProgressBar(),
