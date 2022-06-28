@@ -28,6 +28,7 @@ from ..module import (
     SupConLoss,
     losses,
     mutualRetrieval,
+    MLPLayers,
 )
 from ..module.fast_vgs_modules import DualEncoder, Wav2Vec2Model_cls
 from ..module.kw_modules import TransformerModels
@@ -496,6 +497,9 @@ class KWClipBase(BaseLightningModel):
         all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
         all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
 
+        torch.save(all_audo_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_audio_feats.pt"))
+        torch.save(all_img_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_img_feats.pt"))
+
         print(
             "Total #{} images, #{} audio".format(
                 len(all_img_feats), len(all_audo_feats)
@@ -574,7 +578,7 @@ class KWClipBase(BaseLightningModel):
             self.logger.experiment.add_scalars(
                 "val_recall_mean", recall_results_mean, self.global_step
             )
-        self.log("val_recall_mean_1", recall_results_mean["recall@1"], sync_dist=True)
+        self.log("val_recall_mean_10", recall_results_mean["recall@10"], sync_dist=True)
 
     def processWavs(self, wav):
         wav_len = [len(x) for x in wav]
@@ -881,12 +885,13 @@ class KW_ParallelBranch(nn.Module):
         self.config = config
         self.audio_dim = audio_dim
         self.out_dim = out_dim
+        self.need_projection = self.config.model_settings.parallel_branch.get("need_projection",True)
 
         assert hasattr(
             TransformerModels, config.model_settings.parallel_branch.transformer_type
         )
         logger.info(
-            f"Using {config.model_settings.parallel_branch.transformer_type} as KW_ParallelBranch"
+            f"Using {config.model_settings.parallel_branch.transformer_type} as KW_ParallelBranch (projection={self.need_projection})"
         )
         self.self_att = getattr(
             TransformerModels, config.model_settings.parallel_branch.transformer_type
@@ -895,7 +900,8 @@ class KW_ParallelBranch(nn.Module):
         self.cls = self._create_cls()
         logger.info("Start init [CLS] {}".format(self.cls.shape))
 
-        self.linear_proj = nn.Linear(self.audio_dim, self.out_dim)
+        if self.need_projection:
+            self.linear_proj = nn.Linear(self.audio_dim, self.out_dim)
 
     def _create_cls(self):
         # first cls for parallel objective
@@ -942,7 +948,8 @@ class KW_ParallelBranch(nn.Module):
 
         out = out[:, :1].reshape(-1, self.audio_dim)
 
-        out = self.linear_proj(out)
+        if hasattr(self,"linear_proj"):
+            out = self.linear_proj(out)
 
         return out
 
@@ -991,6 +998,26 @@ class KWClip_GeneralTransformer(KWClipBase):
                 out_dim=self.subword_embd_dim,
             )
 
+
+        self.img_enc_proj_net = None
+        image_encoder_projection = self.config.model_settings.get("image_encoder_projection",None)
+        if image_encoder_projection is not None:
+            logger.info(f"image_encoder_projection dims:{image_encoder_projection.dimensions} droupout:{image_encoder_projection.dropout}")
+            self.img_enc_proj_net = MLPLayers(
+                units = image_encoder_projection.dimensions,
+                dropout = image_encoder_projection.dropout
+            )
+
+        self.p_branch_proj_net = None
+        parallel_branch_projection = self.config.model_settings.get("parallel_branch_projection",None)
+        if parallel_branch_projection is not None:
+            logger.info(f"parallel_branch_projection dims:{parallel_branch_projection.dimensions} droupout:{parallel_branch_projection.dropout}")
+            self.p_branch_proj_net = MLPLayers(
+                units = parallel_branch_projection.dimensions,
+                dropout = parallel_branch_projection.dropout
+            )
+        
+        
     def getTrainableParams(self):
         _params = super().getTrainableParams()
         if self.cascaded_branch is not None:
@@ -1000,6 +1027,14 @@ class KWClip_GeneralTransformer(KWClipBase):
         if self.parallel_branch is not None:
             logger.info("Add parallel_branch parameters")
             _params += list(self.parallel_branch.parameters())
+
+        if self.img_enc_proj_net is not None:
+            logger.info("Add img_enc_proj_net parameters")
+            _params += list(self.img_enc_proj_net.parameters())
+
+        if self.p_branch_proj_net is not None:
+            logger.info("Add parallel_branch_projection parameters")
+            _params += list(self.p_branch_proj_net.parameters())
 
         return _params
 
@@ -1117,6 +1152,10 @@ class KWClip_GeneralTransformer(KWClipBase):
         audio_feat, audio_len = self.forward_audio(wav, wav_len)
 
         image_feat = self.forward_image(image)
+        if self.img_enc_proj_net is not None:
+            image_feat = self.img_enc_proj_net(image_feat)
+        # print("audio_feat",audio_feat.shape)
+        # print("image_feat",image_feat.shape)
 
         cascaded_audio_feat = None
         parallel_audio_feat = None
@@ -1147,6 +1186,8 @@ class KWClip_GeneralTransformer(KWClipBase):
                 audio_feat=audio_feat,
                 audio_len=audio_len,
             )
+            if self.p_branch_proj_net is not None:
+                parallel_audio_feat = self.p_branch_proj_net(parallel_audio_feat)
 
         image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
 

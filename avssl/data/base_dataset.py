@@ -10,6 +10,7 @@ import clip
 import librosa
 import numpy as np
 import torch
+from torch.nn import functional as F
 from PIL import Image
 from torch.utils.data import Dataset
 import logging
@@ -173,12 +174,13 @@ class BaseDataset(Dataset):
 
         if self.load_audio:
             waveform, _ = librosa.load(path, sr=self.target_sr)
-            if self.normalize_waveform:
-                waveform = (waveform - np.mean(waveform)) / np.std(waveform)
             if self.audio_transform is not None:
                 audio = self.audio_transform(waveform)
             else:
                 audio = torch.FloatTensor(waveform)
+            if self.normalize_waveform:
+                audio = F.layer_norm(audio, audio.shape)
+                # waveform = (waveform - np.mean(waveform)) / np.std(waveform)
         else:
             audio = path
 
