@@ -186,7 +186,7 @@ class TrainSpeechClipBaseTask(BaseTask):
 
         model_checkpoint_recall = ModelCheckpoint(
             dirpath=config.trainer.default_root_dir,
-            filename="{epoch}-{step}-{val_recall_mean_1:.4f}",
+            filename="{epoch}-{step}-{val_recall_mean_10:.4f}",
             monitor="val_recall_mean_10",
             save_top_k=3,
             mode="max",
