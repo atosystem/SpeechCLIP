@@ -382,6 +382,7 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         # cfg = HubertConfig()
         # self.encoder = HubertModel(cfg=cfg, task_cfg=task,dictionaries=[])
         self.encoder_task = task
+        logger.info(f"Normalize waveform = ({self.encoder_task.cfg.normalize:})")
 
         if hasattr(self.encoder, "get_downsample_rates"):
             self.downsample_rate = self.encoder.get_downsample_rates("hidden_states")
@@ -499,8 +500,8 @@ class FairseqSpeechEncoder_Hubert(nn.Module):
         HubertModel.customHubertForward = copy_func(customFunc_hubert_forward)
 
     def preprocess_input(self, wavs):
-        # if self.encoder_task.cfg.normalize:
-        #     wavs = [F.layer_norm(wav, wav.shape) for wav in wavs]
+        if self.encoder_task.cfg.normalize:
+            wavs = [F.layer_norm(wav, wav.shape) for wav in wavs]
 
         device = wavs[0].device
         wav_lengths = torch.LongTensor([len(wav) for wav in wavs]).to(device)

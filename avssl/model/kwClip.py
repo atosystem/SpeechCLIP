@@ -646,6 +646,7 @@ class KW_CascadedBranch(nn.Module):
         self.text_dim = text_dim
         self.clip = clip
         self.config = config
+        self.kw_projection_config = self.config.model_settings.cascaded_branch.keyword.get("kw_projection",None)
 
         logger.info("Using KW_CascadedBranch")
         self.keyword_num = config.model_settings.cascaded_branch.keyword.number
@@ -663,10 +664,20 @@ class KW_CascadedBranch(nn.Module):
             TransformerModels, config.model_settings.cascaded_branch.transformer_type
         )(**config.model_settings.cascaded_branch.transformer_args)
 
-        self.linear_proj = nn.Linear(
-            self.config.model_settings.cascaded_branch.transformer_args.d_model,
-            self.text_dim,
-        )
+        if self.kw_projection_config is None:
+            logger.info("kw_projection not specified, using single linear layer as default")
+            self.linear_proj = nn.Linear(
+                self.config.model_settings.cascaded_branch.transformer_args.d_model,
+                self.text_dim,
+            )
+        else:
+            logger.info(f"kw_projection dims:{self.kw_projection_config.dimensions} droupout:{self.kw_projection_config.dropout}")
+            assert self.kw_projection_config.dimensions[0] == self.config.model_settings.cascaded_branch.transformer_args.d_model, f"first dim({self.kw_projection_config.dimensions[0]}) should match the audio encoder dim({self.config.model_settings.cascaded_branch.transformer_args.d_model})"
+            assert self.kw_projection_config.dimensions[-1] == self.text_dim, f"last dim({self.kw_projection_config.dimensions[-1]}) should match the text encoder dim({self.text_dim})"
+            self.linear_proj = MLPLayers(
+                units = self.kw_projection_config.dimensions,
+                dropout = self.kw_projection_config.dropout
+            )
 
         # codebook selection
         self.vector_quantizer = None
@@ -1016,7 +1027,15 @@ class KWClip_GeneralTransformer(KWClipBase):
                 units = parallel_branch_projection.dimensions,
                 dropout = parallel_branch_projection.dropout
             )
-        
+
+        self.c_branch_proj_net = None
+        cascaded_branch_projection = self.config.model_settings.get("cascaded_branch_projection",None)
+        if parallel_branch_projection is not None:
+            logger.info(f"cascaded_branch_projection dims:{cascaded_branch_projection.dimensions} droupout:{cascaded_branch_projection.dropout}")
+            self.c_branch_proj_net = MLPLayers(
+                units = cascaded_branch_projection.dimensions,
+                dropout = cascaded_branch_projection.dropout
+            )
         
     def getTrainableParams(self):
         _params = super().getTrainableParams()
@@ -1038,7 +1057,7 @@ class KWClip_GeneralTransformer(KWClipBase):
 
         return _params
 
-    def feature_extractor_s3prl(self, wav):
+    def feature_extractor_s3prl(self, wav,featrure_layer_norm=False):
         wav, wav_len = self.processWavs(wav)
 
         audio_feat, audio_len, hidden_states = self.forward_audio(
@@ -1081,6 +1100,12 @@ class KWClip_GeneralTransformer(KWClipBase):
         # # print(hubert_states.shape)
         # # exit(1)
         # torch.save(hubert_states.cpu(),f"/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/{uuid.uuid4()}.pt")
+        
+        if featrure_layer_norm:
+            hidden_states = torch.stack(hidden_states,dim=0)
+            hidden_states = F.layer_norm(
+                hidden_states, (hidden_states.shape[-1],))
+            hidden_states = [x for x in hidden_states]
 
         return hidden_states[-1], hidden_states
 
