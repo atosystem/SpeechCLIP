@@ -33,7 +33,7 @@ model_settings:
         norm_first: False
     need_projection: true
   cascaded_branch:
-    type: KW_CascadedBranch #KW_CascadedBranch #KW_CascadedBranch_Integrated
+    type: KW_CascadedBranch_Integrated #KW_CascadedBranch #KW_CascadedBranch_Integrated
     transformer_type: MultiheadAttentionAndNorm #[TransformerEncoder, MultiheadAttentionAndNorm, RelTransformerEncoder]
     transformer_args:
         n_layers: 1
