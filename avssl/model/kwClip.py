@@ -1100,7 +1100,7 @@ class KWClip_GeneralTransformer(KWClipBase):
         # # print(hubert_states.shape)
         # # exit(1)
         # torch.save(hubert_states.cpu(),f"/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/{uuid.uuid4()}.pt")
-        
+        assert featrure_layer_norm == True
         if featrure_layer_norm:
             hidden_states = torch.stack(hidden_states,dim=0)
             hidden_states = F.layer_norm(
