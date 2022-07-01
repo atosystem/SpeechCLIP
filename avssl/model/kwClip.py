@@ -1057,7 +1057,7 @@ class KWClip_GeneralTransformer(KWClipBase):
 
         return _params
 
-    def feature_extractor_s3prl(self, wav,featrure_layer_norm=False):
+    def feature_extractor_s3prl(self, wav,featrure_layer_norm=True):
         wav, wav_len = self.processWavs(wav)
 
         audio_feat, audio_len, hidden_states = self.forward_audio(
