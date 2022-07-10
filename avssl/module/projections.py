@@ -1,5 +1,8 @@
 from torch import nn
+
 __all__ = ["MLPLayers"]
+
+
 class MLPLayers(nn.Module):
     def __init__(self, units=[512, 512, 512], nonlin=nn.ReLU(), dropout=0.1):
         super(MLPLayers, self).__init__()

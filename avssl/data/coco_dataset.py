@@ -77,7 +77,7 @@ class CoCoDataset(BaseDataset):
                             self.dataset_root, "mscoco_img", _entry["image"]
                         )
                     if "text" in self.modalities:
-                        _ent_data["text"] = _capion["text"]
+                        _ent_data["text"] = _capion["text"].lower()
                     self.data.append(_ent_data)
             else:
                 self.data.append(

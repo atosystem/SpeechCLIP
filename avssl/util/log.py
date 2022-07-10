@@ -38,9 +38,9 @@ def set_pl_logger(args: OrderedNamespace) -> Union[bool, LightningLoggerBase]:
         return None
     elif isinstance(logger_type, bool):
         return logger_type
-    # elif isinstance(logger_type, WandbLogger):
-    #     return logger_type
-    elif logger_type == "wandb" or isinstance(logger_type, WandbLogger):
+    elif isinstance(logger_type, WandbLogger):
+        return logger_type
+    elif logger_type == "wandb":  # or isinstance(logger_type, WandbLogger):
         project = args.logger.project
         name = args.trainer.default_root_dir.split("/")[-1]
         logger = WandbLogger(

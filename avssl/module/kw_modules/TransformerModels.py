@@ -126,3 +126,10 @@ class MultiheadAttentionAndNorm(nn.Module):
 
     def extract_hidden_states(self, src: torch.Tensor, key_padding_mask: torch.Tensor):
         return tuple([src, self.forward(src, key_padding_mask)])
+
+    def extract_attention_map(self, src: torch.Tensor, key_padding_mask: torch.Tensor):
+        _out, _att_weight = self.multihead_attn_layer(
+            src, src, src, key_padding_mask=key_padding_mask, average_attn_weights=False
+        )
+        _out = self.attentionBlock_Norm(_out + src)
+        return _out, _att_weight

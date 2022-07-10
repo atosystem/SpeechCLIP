@@ -15,7 +15,12 @@ from ..data import (
     PlacesImageCaptionDataset,
     collate_image_captions,
 )
-from ..model import KWClip_GeneralTransformer
+from ..model import (
+    KWClip_CLIP_Original,
+    KWClip_GeneralTransformer,
+    KWClip_GeneralTransformer_SpeechText,
+    KWClip_SpeechText,
+)
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 
@@ -79,3 +84,27 @@ class TrainKWClip_GeneralTransformer(TrainSpeechClipBaseTask):
 
     def run(self):
         super().run(KWClip_GeneralTransformer)
+
+
+class TrainKWClip_SpeechText(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(KWClip_SpeechText)
+
+
+class TrainKWClip_Original(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(KWClip_CLIP_Original)
+
+
+class TrainKWClip_GeneralSpeechText(TrainSpeechClipBaseTask):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        super().run(KWClip_GeneralTransformer_SpeechText)

@@ -26,14 +26,18 @@ def draw_embedding_space_PCA(
     pca = PCA()
 
     components = pca.fit_transform(np.concatenate((gold_embs, kw_embs), axis=0))
-    labels = {
-        str(i): f"PC {i+1} ({var:.1f}%)"
-        for i, var in enumerate(pca.explained_variance_ratio_ * 100)
-    }
 
-    fig = px.scatter_matrix(
-        components, labels=labels, dimensions=range(2), color=df["kw_id"]
-    )
-    fig.update_traces(diagonal_visible=False)
+    fig = px.scatter(components, x=0, y=1, color=df["kw_id"])
+    # fig.show()
+
+    # labels = {
+    #     str(i): f"PC {i+1} ({var:.1f}%)"
+    #     for i, var in enumerate(pca.explained_variance_ratio_ * 100)
+    # }
+
+    # fig = px.scatter_matrix(
+    #     components, labels=labels, dimensions=range(2), color=df["kw_id"]
+    # )
+    # fig.update_traces(diagonal_visible=False)
 
     fig.write_image(output_path)

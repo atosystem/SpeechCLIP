@@ -1,6 +1,7 @@
 # Ref: https://github.com/wnhsu/ResDAVEnet-VQ/blob/master/dataloaders/image_caption_dataset.py
 # Author: David Harwath, Wei-Ning Hsu
 
+import logging
 import os
 import pickle
 from string import Template
@@ -10,10 +11,10 @@ import clip
 import librosa
 import numpy as np
 import torch
-from torch.nn import functional as F
 from PIL import Image
+from torch.nn import functional as F
 from torch.utils.data import Dataset
-import logging
+
 logger = logging.getLogger(__name__)
 
 

@@ -69,15 +69,22 @@ class TrainSpeechClipBaseTask(BaseTask):
             model = model_cls.load_from_checkpoint(self.args.ckpt)
             if self.args.save_path != "":
                 model.config.save_path = self.args.save_path
+
+            # model.config.retrieval.exactly = False
+            # model.config.log_setting.log_draw_pca_every_n_epoch = 0
+            # model.config.trainer.limit_val_batches = 5
             config = model.config
         else:
             self.args.ckpt = None
             config = yaml.load(open(self.args.config, "r"), Loader=yaml.FullLoader)
             config = OrderedNamespace([self.args, config])
             model = model_cls(config)
-        self.config = config
 
         # config.data.dataset.dataset_root = "/home/twsezjg982/dataset/flickr/"
+        if not hasattr(config.data.dataset, "modalities"):
+            config.data.dataset.modalities = ["audio", "image", "text"]
+
+        self.config = config
 
         if config.data.dataset.name == "flickr":
             if self.args.train:
@@ -85,7 +92,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                     split="train",
                     # load_image=False,
                     # tokenizeText=False,
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
             if self.args.train or self.args.eval:
@@ -93,7 +100,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                     split="dev",
                     # load_image=False,
                     # tokenizeText=False,
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
             if self.args.test:
@@ -101,7 +108,7 @@ class TrainSpeechClipBaseTask(BaseTask):
                     split="test",
                     # load_image=False,
                     # tokenizeText=False,
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
         elif config.data.dataset.name == "places":
@@ -118,19 +125,19 @@ class TrainSpeechClipBaseTask(BaseTask):
             if self.args.train:
                 tr_set = CoCoDataset(
                     split="train",
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
             if self.args.train or self.args.eval:
                 dv_set = CoCoDataset(
                     split="val",
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
             if self.args.test:
                 test_set = CoCoDataset(
                     split="test",
-                    modalities=["audio", "image", "text"],
+                    # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
 
@@ -193,12 +200,15 @@ class TrainSpeechClipBaseTask(BaseTask):
             every_n_epochs=1,
         )
 
+        # if self.args.test:
+        #     config.trainer.logger = True
+
         config.trainer.logger = set_pl_logger(
             config,
         )
 
         # config.trainer.logger = True
-        config.gpus =  self.args.gpus
+        config.gpus = self.args.gpus
         trainer = Trainer(
             callbacks=[
                 TQDMProgressBar(),

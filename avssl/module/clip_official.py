@@ -145,6 +145,19 @@ class ClipModel(nn.Module):
             self.model.text_projection.requires_grad = False
             self.model.logit_scale.requires_grad = False
 
+    def trainable_params(self) -> list:
+        params = []
+        if self.image_encoder_trainable:
+            params += list(self.model.visual.parameters())
+        if self.text_encoder_trainable:
+            params += list(self.model.token_embedding.parameters())
+            params += [self.model.positional_embedding]
+            params += list(self.model.transformer.parameters())
+            params += list(self.model.ln_final.parameters())
+            params += [self.model.text_projection]
+
+        return params
+
     def update_device(self, device):
         # since it is a pure nn.Module, it won't update itself
         self.device = device
