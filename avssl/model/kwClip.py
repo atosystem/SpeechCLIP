@@ -20,6 +20,7 @@ from torch.nn.utils.rnn import pad_sequence
 from ..base import OrderedNamespace
 from ..data import random_crop_max_length
 from ..module import (
+    ChimeraSpeechEncoder,
     ClipModel,
     FairseqSpeechEncoder_Hubert,
     MLPLayers,
@@ -54,37 +55,6 @@ METRIC_REDUCEFN_MAPPING = {
 }
 
 
-def load_fastvgs(
-    model_type: str = "fast-vgs-plus",
-    pretrained: bool = True,
-    trainable: bool = False,
-    superb: bool = False,
-):
-    model_path = (
-        f"/work/vjsalt22/hsuanfu/audio-visual-ssl/avssl/model/{model_type}_coco"
-    )
-    # load args
-    with open(f"{model_path}/args.pkl", "rb") as f:
-        args = pickle.load(f)
-
-    if superb:
-        print("Using Wav2Vec2Model_cls model")
-        model = Wav2Vec2Model_cls(args)
-    else:
-        print("Using DualEncoder model")
-        model = DualEncoder(args)
-
-    if pretrained:
-        # load weights
-        weights = torch.load(os.path.join(model_path, "best_bundle.pth"))
-        model.carefully_load_state_dict(weights["dual_encoder"])
-
-    if not trainable:
-        freeze_model(model)
-
-    return model
-
-
 class KWClipBase(BaseLightningModel):
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
@@ -97,6 +67,8 @@ class KWClipBase(BaseLightningModel):
             self.audio_encoder = S3prlSpeechEncoderPlus(**config.audio_encoder)
         elif self.audio_encoder_type == "FairseqHubert":
             self.audio_encoder = FairseqSpeechEncoder_Hubert(**config.audio_encoder)
+        elif self.audio_encoder_type == "ChimeraSpeechEncoder":
+            self.audio_encoder = ChimeraSpeechEncoder(**config.audio_encoder)
         else:
             logger.warning("No audio encoder loaded")
         self.clip = ClipModel(
@@ -124,7 +96,11 @@ class KWClipBase(BaseLightningModel):
         return_hidden_states: bool = False,
     ) -> Union[Tuple[Union[torch.Tensor, list], torch.Tensor], torch.Tensor]:
 
-        if self.audio_encoder_type in ["s3prl_plus", "FairseqHubert"]:
+        if self.audio_encoder_type in [
+            "s3prl_plus",
+            "FairseqHubert",
+            "ChimeraSpeechEncoder",
+        ]:
             return self.audio_encoder(
                 wav, wav_len, return_hidden_states=return_hidden_states
             )
