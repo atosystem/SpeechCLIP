@@ -1,8 +1,9 @@
+import json
 import os
+
 import clip
 import numpy as np
 import tqdm
-import json
 
 DATASET_DIR = "<SpokenCOCO_root_dir>"
 
@@ -21,8 +22,8 @@ if __name__ == "__main__":
         for _cap in _entry["captions"]:
             captions.append(_cap["text"])
 
-    lens = [ len(x.strip().split()) for x in captions]
-    print("max of lens:",max(lens))
+    lens = [len(x.strip().split()) for x in captions]
+    print("max of lens:", max(lens))
 
     tokens = clip.tokenize(texts=captions, context_length=77, truncate=False)
 

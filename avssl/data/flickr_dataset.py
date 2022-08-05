@@ -11,6 +11,7 @@ import clip
 
 from .base_dataset import BaseDataset
 
+
 class FlickrDataset(BaseDataset):
     def __init__(
         self,

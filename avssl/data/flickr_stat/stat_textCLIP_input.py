@@ -1,5 +1,6 @@
 import os
 import re
+
 import clip
 import numpy as np
 import tqdm

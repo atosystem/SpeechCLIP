@@ -17,6 +17,7 @@ from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 
+
 class BaseDataset(Dataset):
     """BaseDataset
     Generalized for modalities (Image,Audio,Text)
