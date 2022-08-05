@@ -17,101 +17,6 @@ from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 
-
-class BaseImageCaptionDataset(Dataset):
-    def __init__(
-        self,
-        dataset_root: str = "",
-        dataset_json_file: str = "",
-        split: str = "train",
-        image_transform=None,
-        audio_transform=None,
-        target_sr: int = 16_000,
-        load_audio: bool = True,
-        load_image: bool = True,
-        **kwargs,
-    ):
-        assert split in {"train", "dev", "test"}
-        self.split = split
-
-        t = Template(dataset_root)
-        dataset_root = t.safe_substitute(CURRENT_USERNAME=os.getenv("CURRENT_USERNAME"))
-
-        self.dataset_root = dataset_root
-        self.dataset_json_file = dataset_json_file
-        self.audio_transform = audio_transform
-        self.image_transform = image_transform
-        self.target_sr = target_sr
-        self.load_audio = load_audio
-        self.load_image = load_image
-
-        self.data = []
-
-        with open("./avssl/data/flickr_stat/token_mapping.p", "rb") as fp:
-            self.token_mapping = pickle.load(fp)
-
-    def _LoadAudio(self, path: str):
-        """Load audio from file
-
-        Args:
-            path (str): Path to waveform.
-
-        Returns:
-            torch.FloatTensor: Audio features.
-        """
-
-        if self.load_audio:
-            waveform, _ = librosa.load(path, sr=self.target_sr)
-            if self.audio_transform is not None:
-                audio = self.audio_transform(waveform)
-            else:
-                audio = torch.FloatTensor(waveform)
-        else:
-            audio = path
-
-        return audio
-
-    def _LoadImage(self, path: str):
-        """Load image from file
-
-        Args:
-            path (str): Path to image.
-
-        Returns:
-            torch.FloatTensor: Transformed image.
-        """
-
-        if self.load_image:
-            img = Image.open(path).convert("RGB")
-            if self.image_transform is not None:
-                img = self.image_transform(img)
-        else:
-            img = path
-
-        return img
-
-    def __getitem__(self, index):
-        """Get a sample
-
-        Args:
-            index (int): Data index.
-
-        Returns:
-            torch.FloatTensor: audio features (T, D)
-            torch.FloatTensor: image (3, H, W)
-        """
-
-        audio_feat = self._LoadAudio(self.data[index]["wav"])
-        image = self._LoadImage(self.data[index]["image"])
-        if "id" in self.data[index]:
-            return audio_feat, image, torch.LongTensor([self.data[index]["id"]])
-        else:
-            return audio_feat, image
-
-    def __len__(self):
-        return len(self.data)
-
-
 class BaseDataset(Dataset):
     """BaseDataset
     Generalized for modalities (Image,Audio,Text)
@@ -144,11 +49,9 @@ class BaseDataset(Dataset):
             load_image (bool, optional): load image file to tensor. Defaults to True.
             tokenizeText (bool, optional): tokenize text input with clip tokenizer. Defaults to True.
         """
-        # assert split in {"train", "dev", "test"}
         self.split = split
 
         t = Template(dataset_root)
-        dataset_root = t.safe_substitute(CURRENT_USERNAME=os.getenv("CURRENT_USERNAME"))
         self.dataset_root = dataset_root
         self.dataset_json_file = dataset_json_file
         self.audio_transform = audio_transform
@@ -181,7 +84,6 @@ class BaseDataset(Dataset):
                 audio = torch.FloatTensor(waveform)
             if self.normalize_waveform:
                 audio = F.layer_norm(audio, audio.shape)
-                # waveform = (waveform - np.mean(waveform)) / np.std(waveform)
         else:
             audio = path
 

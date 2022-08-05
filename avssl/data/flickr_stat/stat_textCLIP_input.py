@@ -1,12 +1,10 @@
 import os
 import re
-
 import clip
 import numpy as np
-import torch
 import tqdm
 
-DATASET_DIR = "/work/vjsalt22/dataset/flickr"
+DATASET_DIR = "<dataset_dir_of_Flickr8k>"
 
 # TXT_FILE = "Flickr8k.lemma.token.txt"
 TXT_FILE = "Flickr8k.token.txt"
@@ -46,10 +44,10 @@ if __name__ == "__main__":
         "text_clip_vocab_usage_byfreq.npy", result_arr[result_arr[:, 1].argsort()[::-1]]
     )
 
-    np.save(
-        "flickr_token_selected_idx_byfreq.npy",
-        result_arr[result_arr[:, 1].argsort()[::-1]][:, 0],
-    )
+    # np.save(
+    #     "flickr_token_selected_idx_byfreq.npy",
+    #     result_arr[result_arr[:, 1].argsort()[::-1]][:, 0],
+    # )
 
     np.savetxt("text_clip_vocab_usage_byID.txt", result_arr[result_arr[:, 0].argsort()])
     np.save("text_clip_vocab_usage_byID.npy", result_arr[result_arr[:, 0].argsort()])
