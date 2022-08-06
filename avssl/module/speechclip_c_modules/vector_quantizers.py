@@ -1,2 +1,1 @@
-from .gumbel_vector_quantizer import *
-from .kmeans_vector_quantizer import *
+from .my_vector_quantizer import *

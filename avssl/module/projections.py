@@ -4,6 +4,12 @@ __all__ = ["MLPLayers"]
 
 
 class MLPLayers(nn.Module):
+    """MLPLayers
+
+    MLP Layers
+
+    """
+
     def __init__(self, units=[512, 512, 512], nonlin=nn.ReLU(), dropout=0.1):
         super(MLPLayers, self).__init__()
         self.nonlin = nonlin

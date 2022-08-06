@@ -2,14 +2,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 import os
-import pickle
 import string
 
 import clip
 import numpy as np
 import torch
 from clip.simple_tokenizer import SimpleTokenizer
-from importlib_metadata import distribution
 from PIL import Image
 from torch import nn
 
@@ -32,7 +30,7 @@ class ClipModel(nn.Module):
         device: str = "cpu",
         image_encoder_trainable: bool = False,
         text_encoder_trainable: bool = False,
-        reduce_subword_embbedding=None,
+        reduce_subword_embbedding: str = None,
         **kwargs,
     ):
         """Official CLIP model.
@@ -42,6 +40,7 @@ class ClipModel(nn.Module):
             device (str, optional): Device. Defaults to "cpu".
             image_encoder_trainable (bool, optional): Whether to train the image encoder. Defaults to False.
             text_encoder_trainable (bool, optional): Whether to train the text encoder. Defaults to False.
+            reduce_subword_embbedding (str, optional): The reduced vocabulary. Defaults to False
         """
         super().__init__()
         assert name in _clip_models
@@ -62,10 +61,8 @@ class ClipModel(nn.Module):
         self.selected_text_emb_ids = None
         if reduce_subword_embbedding is not None:
             if not os.path.exists(reduce_subword_embbedding):
-                reduce_subword_embbedding = os.path.join(
-                    "/work/{}/atosystem/audio-visual-ssl/".format(os.environ["USER"]),
-                    reduce_subword_embbedding,
-                )
+                logger.error(f"File not found {reduce_subword_embbedding}")
+                exit(1)
 
             _data = np.load(reduce_subword_embbedding)
             self.selected_text_emb_ids = _data[:, 0]
@@ -107,20 +104,9 @@ class ClipModel(nn.Module):
             self.endOfTxt_reduced = self.original2Reduced[
                 self.tokenizer.encoder["<|endoftext|>"]
             ]
-
-            # delete original token embedding to save memory
-            # del self.clip.model.token_embedding
-            # self.clip.model.token_embedding = None
-            # self.original_text_embs_weights = self.clip.model.token_embedding.weight.detach()
         else:
-            # self.reduced_embedding_weight = None
+            # use original CLIP Subword Embedding
             pass
-        #     exit(1)
-
-        # with open('./avssl/data/flickr_stat/token_mapping.p', 'rb') as fp:
-        #     self.token_mapping = pickle.load(fp)
-        # ids = torch.tensor( list(self.token_mapping.keys()) ).to(self.device)
-        # self.used_text_embd_weight = self.model.token_embedding(ids).detach()
 
     def freeze_models(self):
         """Freeze Models if required"""
@@ -222,97 +208,6 @@ class ClipModel(nn.Module):
         """
         return self.model.encode_image(image)
 
-    def encode_subword_prob(
-        self, subword_prob: torch.Tensor, audio_len: torch.Tensor
-    ) -> torch.Tensor:
-
-        bsz, slen, feat_dim = subword_prob.shape
-        TEXT_CLIP_MAX_LEN = 77
-
-        if self.selected_text_emb_ids is None:
-            sot_idx, eot_idx = (
-                self.tokenizer.encoder["<|startoftext|>"],
-                self.tokenizer.encoder["<|endoftext|>"],
-            )
-        else:
-            sot_idx, eot_idx = self.startOfTxt_reduced, self.endOfTxt_reduced
-
-        # 2,3
-        sot_idx, eot_idx = torch.tensor([self.startOfTxt_reduced]).to(
-            self.device
-        ), torch.tensor([self.endOfTxt_reduced]).to(self.device)
-
-        sot_emb = self.model.token_embedding(sot_idx)
-        eot_emb = self.model.token_embedding(eot_idx)
-
-        weighted_subword_embd = subword_prob @ self.model.token_embedding.weight
-
-        # prepend sot token in the front
-        weighted_subword_embd = torch.cat(
-            [sot_emb.unsqueeze(0).repeat(bsz, 1, 1), weighted_subword_embd], dim=1
-        )
-
-        # truncate
-        weighted_subword_embd = weighted_subword_embd[:, :TEXT_CLIP_MAX_LEN, :]
-
-        seq_len = weighted_subword_embd.size(1)
-
-        # pad to max len = 77
-        paddings_idx = (
-            torch.zeros(bsz, TEXT_CLIP_MAX_LEN - seq_len).int().to(self.device)
-        )
-        padding_embs = self.model.token_embedding(paddings_idx)
-
-        weighted_subword_embd = torch.cat((weighted_subword_embd, padding_embs), dim=1)
-        del paddings_idx
-        del padding_embs
-
-        assert weighted_subword_embd.shape == (
-            bsz,
-            TEXT_CLIP_MAX_LEN,
-            self.model.token_embedding.embedding_dim,
-        ), "{} {}".format(
-            weighted_subword_embd.shape,
-            (bsz, TEXT_CLIP_MAX_LEN, self.model.token_embedding.embedding_dim),
-        )
-
-        eot_positions = audio_len + 1
-        # insert eot
-        for i, _audio_len in enumerate(audio_len):
-            if _audio_len >= TEXT_CLIP_MAX_LEN - 2:
-                # audio len too long
-                eot_positions[i] = TEXT_CLIP_MAX_LEN - 1
-                weighted_subword_embd[:, -1, :] = eot_emb
-            else:
-                weighted_subword_embd[:, _audio_len + 1, :] = eot_emb
-
-        assert weighted_subword_embd.shape == (
-            bsz,
-            TEXT_CLIP_MAX_LEN,
-            self.model.token_embedding.embedding_dim,
-        )
-
-        del sot_idx, eot_idx, sot_emb, eot_emb
-
-        x = weighted_subword_embd
-        x = x + self.model.positional_embedding
-        x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.model.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
-        x = self.model.ln_final(x)
-
-        # x.shape = [batch_size, n_ctx, transformer.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = (
-            x[
-                torch.arange(x.shape[0]),
-                eot_positions,
-            ]
-            @ self.model.text_projection
-        )
-        # x = x[torch.arange(x.shape[0]), idx.argmax(dim=-1)] @ self.model.text_projection
-        return x
-
     def encode_text(self, text: torch.Tensor) -> torch.Tensor:
         """Encode a batch of sentences.
         Args:
@@ -323,16 +218,19 @@ class ClipModel(nn.Module):
         return self.model.encode_text(text)
 
     def encode_keywords(self, keywords: torch.Tensor, keyword_num: int) -> torch.Tensor:
+        """encode_keywords
 
+        Args:
+            keywords (torch.Tensor): keywords input
+            keyword_num (int): number of keywords
+
+        Returns:
+            torch.Tensor: output of CLIP Text Encoder
+        """
         if isinstance(keywords, torch.Tensor):
             bsz = keywords.size(0)
         else:
             raise TypeError(f"Unknown keywords type {type(keywords)}")
-
-        # dist = torch.cdist(keywords, self.model.token_embedding.weight).squeeze(1)
-        # nearest_dist, nearest_token = torch.min(dist, dim=-1)
-        # res["nearest_token"] = nearest_token.unsqueeze(1)
-        # res["mean_dist"] = torch.mean(nearest_dist, dim=0)
 
         text = torch.zeros([bsz, 77], device=self.device, dtype=int)
         if self.selected_text_emb_ids is None:
@@ -389,11 +287,6 @@ class ClipModel(nn.Module):
             tuple: (logits_per_image, logits_per_text) ((B_image, B_text), (B_text, B_image))
         """
         return self.model(image, text)
-        # if self.text_encoder_trainable and self.image_encoder_trainable:
-        #     return self.model(image, text)
-        # else:
-        #     with torch.no_grad():
-        #         return self.model(image, text)
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)

@@ -6,17 +6,36 @@ from torch import nn
 
 
 class Kw_BatchNorm(nn.Module):
+    """Kw_BatchNorm
+
+    BatchNorm Layer for keywords
+
+    """
+
     def __init__(
         self,
-        kw_num,
-        kw_dim,
-        batchnorm_type,
-        init_bias,
-        init_scale,
-        std_scale=1,
-        learnable=True,
-        parallel=False,
-    ):
+        kw_num: int,
+        kw_dim: int,
+        batchnorm_type: str,
+        init_bias: torch.Tensor,
+        init_scale: torch.Tensor,
+        std_scale: int = 1,
+        learnable: bool = True,
+        parallel: bool = False,
+    ) -> None:
+        """init
+
+        Args:
+            kw_num (int): number of keywords
+            kw_dim (int): dimension of keywords
+            batchnorm_type (str): type for BatchNorm (`eachKw`: each kw has it's own params or `same`: all kw shared the same params)
+            init_bias (torch.Tensor): initialized bias for BatchNorm
+            init_scale (torch.Tensor): initialized scale for BatchNorm
+            std_scale (int, optional): scale for init scale. Defaults to 1.
+            learnable (bool, optional): if gamma and beta is learnable in BatchNoem. Defaults to True.
+            parallel (bool, optional): (in eachKw mode) if each kw is BatchNorm parallelly. Defaults to False.
+
+        """
         super().__init__()
         self.batchnorm_type = batchnorm_type
         self.kw_num = kw_num
@@ -47,7 +66,13 @@ class Kw_BatchNorm(nn.Module):
             )
         )
 
-    def init_bn(self, init_bias, init_scale):
+    def init_bn(self, init_bias: torch.Tensor, init_scale: torch.Tensor) -> None:
+        """init_bn
+        Initialize batchnorm's params
+        Args:
+            init_bias (torch.Tensor): bias
+            init_scale (torch.Tensor): scale
+        """
         if self.batchnorm_type == "eachKw":
             if self.parallel:
                 self.bn_layer.weight.data.copy_(
@@ -69,7 +94,18 @@ class Kw_BatchNorm(nn.Module):
             self.bn_layer.weight.requires_grad = self.learnable
             self.bn_layer.bias.requires_grad = self.learnable
 
-    def forward(self, keywords, seq_lens=None):
+    def forward(
+        self, keywords: torch.Tensor, seq_lens: torch.Tensor = None
+    ) -> torch.Tensor:
+        """forward
+
+        Args:
+            keywords (torch.Tensor): the input keywords embeddings
+            seq_lens (torch.Tensor, optional): lengths for input keywords tensor. Defaults to None.
+
+        Returns:
+            torch.Tensor: batchnormed output
+        """
         assert keywords.dim() == 3
         assert keywords.shape[2] == self.kw_dim
         if seq_lens is None:

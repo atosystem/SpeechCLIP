@@ -496,7 +496,6 @@ class KWClipBase(BaseLightningModel):
             all_audo_feats.float().to(self.device),
             all_img_feats.float().T.to(self.device),
         )
-        score_per_audio = score_per_audio / 0.07
         score_per_image = score_per_audio.T
 
         # AI : Audio -> Image, IA: Image -> Audio
@@ -504,10 +503,10 @@ class KWClipBase(BaseLightningModel):
         IA_answers = all_img_feats_id
 
         self.reportRetrieval(
-            score_per_audio=score_per_audio,
-            score_per_image=score_per_image,
-            AI_answers=AI_answers,
-            IA_answers=IA_answers,
+            score_per_A=score_per_audio,
+            score_per_B=score_per_image,
+            AB_answers=AI_answers,
+            BA_answers=IA_answers,
         )
 
     def forward_image(self, images: Union[list, torch.Tensor]) -> torch.Tensor:
@@ -545,6 +544,7 @@ class KWClipBase(BaseLightningModel):
         else:
             raise TypeError(f"Unknown text type {type(sents)}")
         if hasattr(self.clip, "original2Reduced"):
+            # if reduced embedding is used, we need to convert original ids to reduced ids
             for i in range(text_tensor.shape[0]):
                 for j in range(text_tensor.shape[1]):
                     text_tensor[i, j] = self.clip.original2Reduced[
@@ -1444,13 +1444,47 @@ class KWClip_GeneralTransformer(KWClipBase):
 
 
 class KWClip_CLIP_Original(KWClipBase):
+    """KWClip_CLIP_Original
+
+    The original CLIP Text Encoder + Image Encoder
+
+    """
+
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
+        # the original CLIP doesn't require parallel and cascaded branch
+        assert self.cascaded_branch is None
+        assert self.parallel_branch is None
 
     def getTrainableParams(self):
         _params = super().getTrainableParams()
-
         return _params
+
+    def reportRetrieval(
+        self,
+        score_per_A: torch.Tensor,
+        score_per_B: torch.Tensor,
+        AB_answers: torch.Tensor,
+        BA_answers: torch.Tensor,
+        metadata: dict = {
+            "modality_A_title": "audio",
+            "modality_B_title": "image",
+            "modality_A_logAbbr": "A",
+            "modality_B_logAbbr": "I",
+        },
+    ):
+        return super().reportRetrieval(
+            score_per_A,
+            score_per_B,
+            AB_answers,
+            BA_answers,
+            {
+                "modality_A_title": "text",
+                "modality_B_title": "image",
+                "modality_A_logAbbr": "T",
+                "modality_B_logAbbr": "I",
+            },
+        )
 
     def compute_loss(self, input_feats):
         """compute the loss here
@@ -1506,11 +1540,7 @@ class KWClip_CLIP_Original(KWClipBase):
     def forward(
         self,
         batch,
-        cal_loss: bool = False,
     ) -> dict:
-
-        # wav = batch["wav"]
-        # wav_len = batch["wav_len"]
         image = batch["image"]
         id = batch["id"]
         text = batch["text"]
@@ -1518,12 +1548,8 @@ class KWClip_CLIP_Original(KWClipBase):
         # update device information to clip model
         self.clip.update_device(self.device)
 
-        # audio_feat, audio_len = self.forward_audio(wav, wav_len)
-
         image_feat = self.forward_image(image)
         text_feat = self.forward_text(text.view(-1, 77))
-        # print("asdasd")
-        # exit(1)
 
         image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
         text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
@@ -1536,7 +1562,6 @@ class KWClip_CLIP_Original(KWClipBase):
 
         losses["parallel_audio_feat"] = text_feat
 
-        # losses.update(
         log_metrics.update(
             {
                 "cl_temp": self.criterion.current_temperature,
@@ -1556,9 +1581,17 @@ class KWClip_CLIP_Original(KWClipBase):
 
 
 class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
+    """KWClip_GeneralTransformer_SpeechText
+
+    Use this class for load pretrained Parallel SpeechCLIP for Zeroshot Spech-Text Retrieval
+    Using the parallel branch only
+
+    """
+
     def __init__(self, config: OrderedNamespace):
         config.retrieval.audio_feat_src = "parallel"
         super().__init__(config)
+        assert config.model_settings.parallel_objective_weight > 0
 
     def compute_loss(self, input_feats):
         """compute the loss here
@@ -1613,12 +1646,10 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
     def forward(
         self,
         batch,
-        cal_loss: bool = False,
     ) -> dict:
 
         wav = batch["wav"]
         wav_len = batch["wav_len"]
-        image = batch["image"]
         id = batch["id"]
         text = batch["text"]
 
@@ -1627,37 +1658,11 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
 
         audio_feat, audio_len = self.forward_audio(wav, wav_len)
 
-        # image_feat = self.forward_image(image)
         text_feat = self.forward_text(text.view(-1, 77))
 
-        # if self.img_enc_proj_net is not None:
-        #     image_feat = self.img_enc_proj_net(image_feat)
-        # print("audio_feat",audio_feat.shape)
-        # print("image_feat",image_feat.shape)
-
-        cascaded_audio_feat = None
         parallel_audio_feat = None
         vq_results = None
         keywords = None
-        if self.cascaded_branch is not None:
-            if (
-                self.config.model_settings.cascaded_branch.type
-                == "KW_CascadedBranch_Integrated"
-            ):
-                (
-                    cascaded_audio_feat,
-                    vq_results,
-                    keywords,
-                    parallel_audio_feat,
-                ) = self.cascaded_branch(
-                    audio_feat=audio_feat,
-                    audio_len=audio_len,
-                )
-            else:
-                cascaded_audio_feat, vq_results, keywords = self.cascaded_branch(
-                    audio_feat=audio_feat,
-                    audio_len=audio_len,
-                )
 
         if self.parallel_branch is not None:
             parallel_audio_feat = self.parallel_branch(
@@ -1666,6 +1671,9 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
             )
             if self.p_branch_proj_net is not None:
                 parallel_audio_feat = self.p_branch_proj_net(parallel_audio_feat)
+        else:
+            logger.error("No parallel branch found")
+            exit(1)
 
         losses = {
             "id": id,
@@ -1673,21 +1681,11 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
         }
         log_metrics = {}
 
-        if cascaded_audio_feat is not None:
-            cascaded_audio_feat = cascaded_audio_feat / cascaded_audio_feat.norm(
-                dim=-1, keepdim=True
-            )
-            losses["cascaded_audio_feat"] = cascaded_audio_feat
-
         if parallel_audio_feat is not None:
             parallel_audio_feat = parallel_audio_feat / parallel_audio_feat.norm(
                 dim=-1, keepdim=True
             )
             losses["parallel_audio_feat"] = parallel_audio_feat
-
-        # losses = {"loss": 0}
-        if self.config.model_settings.cascaded_objective_weight > 0:
-            log_metrics["softmax_temp"] = vq_results["temp"]
 
         if self.config.model_settings.parallel_objective_weight > 0:
             pass
@@ -1702,7 +1700,6 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
             losses,
             log_metrics,
             {
-                # "cascaded_audio_feat": cascaded_audio_feat,
                 "parallel_audio_feat": parallel_audio_feat,
                 "text_feat": text_feat,
                 "id": id,
@@ -1711,25 +1708,21 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
             },
         )
 
-    def validation_epoch_end(self, outputs):
+    def validation_epoch_end(self, outputs: list) -> None:
+        """validation_epoch_end
 
+        Override for conducting Speech-Text Retrieval
+
+        """
         all_text_feats = torch.cat([x["text_feat"] for x in outputs], dim=0)
         if "id" in outputs[0] and outputs[0]["id"] is not None:
             all_ids = torch.cat([x["id"] for x in outputs], dim=0)
         else:
             all_ids = torch.arange(len(all_text_feats))
 
-        # id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_imgs)}
-
         all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
         all_audo_feats_id = all_ids
         all_text_feats_id = all_ids
-
-        # all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
-        # all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
-
-        # torch.save(all_audo_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_audio_feats.pt"))
-        # torch.save(all_img_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_img_feats.pt"))
 
         print(
             "Total #{} text, #{} audio".format(len(all_text_feats), len(all_audo_feats))
@@ -1738,56 +1731,56 @@ class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
 
         # calculate dot product
         score_per_audio = torch.matmul(
-            all_audo_feats.float(),  # .to(self.device),
-            all_text_feats.float().T,  # .to(self.device),
+            all_audo_feats.float(),
+            all_text_feats.float().T,
         ).cpu()
-        # score_per_audio = score_per_audio
+
         score_per_text = score_per_audio.T
 
-        # AI : Audio -> Image, IA: Image -> Audio
-        AI_answers = all_audo_feats_id
-        IA_answers = all_text_feats_id
+        # AT : Audio -> Text, TA: Text -> Audio
+        AT_answers = all_audo_feats_id
+        TA_answers = all_text_feats_id
 
         self.reportRetrieval(
-            score_per_audio=score_per_audio,
-            score_per_image=score_per_text,
-            AI_answers=AI_answers,
-            IA_answers=IA_answers,
-        )
-
-    def reportRetrieval(self, score_per_audio, score_per_image, AI_answers, IA_answers):
-        recall_results_AT, recall_results_TA, recall_results_mean = mutualRetrieval(
             score_per_A=score_per_audio,
-            score_per_B=score_per_image,
-            AB_answers=AI_answers,
-            BA_answers=IA_answers,
-            recall_at=self.recall_at,
+            score_per_B=score_per_text,
+            AB_answers=AT_answers,
+            BA_answers=TA_answers,
         )
 
-        print("recall_results_AT", recall_results_AT)
-        print("val_recall_TA", recall_results_TA)
-        print("val_recall_mean", recall_results_mean)
-
-        if isinstance(self.logger, WandbLogger):
-            self.log("val_recall_AT", recall_results_AT, sync_dist=True)
-            self.log("val_recall_TA", recall_results_TA, sync_dist=True)
-            self.log("val_recall_mean", recall_results_mean, sync_dist=True)
-        else:
-            self.logger.experiment.add_scalars(
-                "val_recall_AI", recall_results_AT, self.global_step
-            )
-            self.logger.experiment.add_scalars(
-                "val_recall_IA", recall_results_TA, self.global_step
-            )
-            self.logger.experiment.add_scalars(
-                "val_recall_mean", recall_results_mean, self.global_step
-            )
-        self.log("val_recall_mean_10", recall_results_mean["recall@10"], sync_dist=True)
+    def reportRetrieval(
+        self,
+        score_per_A: torch.Tensor,
+        score_per_B: torch.Tensor,
+        AB_answers: torch.Tensor,
+        BA_answers: torch.Tensor,
+    ):
+        return super().reportRetrieval(
+            score_per_A,
+            score_per_B,
+            AB_answers,
+            BA_answers,
+            {
+                {
+                    "modality_A_title": "audio",
+                    "modality_B_title": "text",
+                    "modality_A_logAbbr": "A",
+                    "modality_B_logAbbr": "T",
+                }
+            },
+        )
 
 
 class KWClip_SpeechText(KWClipBase):
+    """KWClip_SpeechText
+
+    Train Speech-Text model using SSL model and CLIP Text Encoder
+
+    """
+
     def __init__(self, config: OrderedNamespace):
         super().__init__(config)
+        # exactly means that we do not serve the captions correspond to the same image as the same
         if self.config.retrieval.exactly:
             logger.warning("Retrieval = (Exactly)")
         self.parallel_branch = None
@@ -1841,11 +1834,11 @@ class KWClip_SpeechText(KWClipBase):
 
         return _params
 
-    def compute_loss(self, input_feats):
+    def compute_loss(self, input_feats: dict):
         """compute the loss here
 
         Args:
-            input_feats (Any): the feats required for computing loss
+            input_feats (dict): the feats required for computing loss
         """
         assert isinstance(input_feats, dict)
         assert "id" in input_feats
@@ -1877,20 +1870,15 @@ class KWClip_SpeechText(KWClipBase):
     def forward(
         self,
         batch,
-        cal_loss: bool = False,
     ) -> dict:
 
         wav = batch["wav"]
         wav_len = batch["wav_len"]
-        # image = batch["image"]
         text = batch["text"]
         id = batch["id"]
 
         if self.config.retrieval.exactly:
             id = None
-            assert False
-        # else:
-        # assert False
 
         # update device information to clip model
         self.clip.update_device(self.device)
@@ -1921,7 +1909,6 @@ class KWClip_SpeechText(KWClipBase):
             )
             losses["parallel_audio_feat"] = parallel_audio_feat
 
-        # losses.update(
         log_metrics.update(
             {
                 "cl_temp": self.criterion.current_temperature,
@@ -1945,17 +1932,9 @@ class KWClip_SpeechText(KWClipBase):
         else:
             all_ids = torch.arange(len(all_text_feats))
 
-        # id_img_pairs = {_id.item(): _img for _id, _img in zip(all_ids, all_imgs)}
-
         all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
         all_audo_feats_id = all_ids
         all_text_feats_id = all_ids
-
-        # all_img_feats = torch.stack([x for _, x in id_img_pairs.items()], dim=0)
-        # all_img_feats_id = torch.LongTensor(list(id_img_pairs.keys()))
-
-        # torch.save(all_audo_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_audio_feats.pt"))
-        # torch.save(all_img_feats.detach().cpu(),os.path.join(self.config.trainer.default_root_dir,"all_img_feats.pt"))
 
         print(
             "Total #{} text, #{} audio".format(len(all_text_feats), len(all_audo_feats))
@@ -1981,31 +1960,22 @@ class KWClip_SpeechText(KWClipBase):
             IA_answers=IA_answers,
         )
 
-    def reportRetrieval(self, score_per_audio, score_per_image, AI_answers, IA_answers):
-        recall_results_AT, recall_results_TA, recall_results_mean = mutualRetrieval(
-            score_per_A=score_per_audio,
-            score_per_B=score_per_image,
-            AB_answers=AI_answers,
-            BA_answers=IA_answers,
-            recall_at=self.recall_at,
+    def reportRetrieval(
+        self,
+        score_per_A: torch.Tensor,
+        score_per_B: torch.Tensor,
+        AB_answers: torch.Tensor,
+        BA_answers: torch.Tensor,
+    ):
+        return super().reportRetrieval(
+            score_per_A,
+            score_per_B,
+            AB_answers,
+            BA_answers,
+            {
+                "modality_A_title": "audio",
+                "modality_B_title": "text",
+                "modality_A_logAbbr": "A",
+                "modality_B_logAbbr": "T",
+            },
         )
-
-        print("recall_results_AT", recall_results_AT)
-        print("val_recall_TA", recall_results_TA)
-        print("val_recall_mean", recall_results_mean)
-
-        if isinstance(self.logger, WandbLogger):
-            self.log("val_recall_AT", recall_results_AT, sync_dist=True)
-            self.log("val_recall_TA", recall_results_TA, sync_dist=True)
-            self.log("val_recall_mean", recall_results_mean, sync_dist=True)
-        else:
-            self.logger.experiment.add_scalars(
-                "val_recall_AI", recall_results_AT, self.global_step
-            )
-            self.logger.experiment.add_scalars(
-                "val_recall_IA", recall_results_TA, self.global_step
-            )
-            self.logger.experiment.add_scalars(
-                "val_recall_mean", recall_results_mean, self.global_step
-            )
-        self.log("val_recall_mean_10", recall_results_mean["recall@10"], sync_dist=True)

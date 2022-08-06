@@ -1,7 +1,3 @@
-"""
-Author: Yonglong Tian (yonglong@mit.edu)
-Date: May 07, 2020
-"""
 from __future__ import print_function
 
 import numpy as np
@@ -10,8 +6,12 @@ import torch.nn as nn
 
 
 class SupConLoss(nn.Module):
-    """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
-    It also supports the unsupervised contrastive loss in SimCLR"""
+    """
+    Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
+    It also supports the unsupervised contrastive loss in SimCLR
+    Author: Yonglong Tian (yonglong@mit.edu)
+    Date: May 07, 2020
+    """
 
     def __init__(
         self,
