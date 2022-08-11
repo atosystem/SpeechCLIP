@@ -1,10 +1,14 @@
+echo "[Train] SpeechCLIP Parallel Base on Flickr8k"
 EXP_ROOT="exp_test"
+CFG="config/speechCLIP/model_base/spchclp_p.yaml"
 mkdir $EXP_ROOT
 python3 run_task.py \
     "TrainKWClip_GeneralTransformer" \
-    --resume "/work/vjsalt22/atosystem/audio-visual-ssl/slt_ckpts/SpeechCLIP/base/flickr/parallel/epoch_131-step_15443-val_recall_mean_1_36.0100.ckpt" \
+    --config $CFG \
     --gpus 2 \
     --njobs 4 \
     --seed 7122 \
-    --test \
+    --train \
     --save_path $EXP_ROOT
+
+

@@ -74,6 +74,11 @@ class TrainSpeechClipBaseTask(BaseTask):
             # model.config.log_setting.log_draw_pca_every_n_epoch = 0
             # model.config.trainer.limit_val_batches = 5
             config = model.config
+            config = config.to_dict()
+            config.update(vars(self.args))
+            config = OrderedNamespace(config)
+            model.config = config
+
         else:
             self.args.ckpt = None
             config = yaml.load(open(self.args.config, "r"), Loader=yaml.FullLoader)
@@ -202,7 +207,6 @@ class TrainSpeechClipBaseTask(BaseTask):
 
         # if self.args.test:
         #     config.trainer.logger = True
-
         config.trainer.logger = set_pl_logger(
             config,
         )

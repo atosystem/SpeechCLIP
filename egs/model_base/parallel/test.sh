@@ -1,3 +1,4 @@
+echo "[Test] SpeechCLIP Parallel Base on Flickr8k"
 EXP_ROOT="exp_test"
 mkdir $EXP_ROOT
 python3 run_task.py \
@@ -8,3 +9,5 @@ python3 run_task.py \
     --seed 7122 \
     --test \
     --save_path $EXP_ROOT
+
+

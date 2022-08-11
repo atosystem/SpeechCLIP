@@ -9,6 +9,7 @@ from typing import List, Tuple, Union
 import numpy as np
 import torch
 import tqdm
+from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.loggers.wandb import WandbLogger
 from torch import nn
 from torch.nn import functional as F
@@ -196,7 +197,7 @@ class KWClipBase(BaseLightningModel):
         else:
             raise NotImplementedError()
 
-    def validation_step(self, batch: dict) -> dict:
+    def validation_step(self, batch: dict, batch_idx: int) -> dict:
         """validation_step
 
         Args:
@@ -607,7 +608,7 @@ class KWClipBase(BaseLightningModel):
             self.log(f"val_recall_{log_AB_abbr}", recall_results_AB, sync_dist=True)
             self.log(f"val_recall_{log_BA_abbr}", recall_results_BA, sync_dist=True)
             self.log("val_recall_mean", recall_results_mean, sync_dist=True)
-        else:
+        elif isinstance(self.logger, TensorBoardLogger):
             # when using tensorboard
             self.logger.experiment.add_scalars(
                 f"val_recall_{log_AB_abbr}", recall_results_AB, self.global_step
@@ -618,7 +619,10 @@ class KWClipBase(BaseLightningModel):
             self.logger.experiment.add_scalars(
                 "val_recall_mean", recall_results_mean, self.global_step
             )
-        self.log("val_recall_mean_10", recall_results_mean["recall@10"], sync_dist=True)
+        if self.logger is not None:
+            self.log(
+                "val_recall_mean_10", recall_results_mean["recall@10"], sync_dist=True
+            )
 
     def processWavs(
         self, wav: torch.LongTensor
