@@ -58,7 +58,7 @@ class SimpleVectorQuantizer(nn.Module):
     def set_num_updates(self, num_updates):
         if self.temp_type == "scheduled":
             self.curr_temp = max(
-                self.max_temp * self.temp_decay ** num_updates, self.min_temp
+                self.max_temp * self.temp_decay**num_updates, self.min_temp
             )
 
     def forward(self, x, prob_msk=[0, 2, 3], produce_targets=True):

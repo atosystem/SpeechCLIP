@@ -10,11 +10,6 @@ from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader, random_split
 
 from ..base import OrderedNamespace
-from ..data import (
-    FlickrImageCaptionDataset,
-    PlacesImageCaptionDataset,
-    collate_image_captions,
-)
 from ..model import (
     KWClip_CLIP_Original,
     KWClip_GeneralTransformer,

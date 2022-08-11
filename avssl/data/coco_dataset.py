@@ -9,7 +9,7 @@ from typing import List
 
 import clip
 
-from .base_dataset import BaseDataset, BaseImageCaptionDataset
+from .base_dataset import BaseDataset
 
 
 class CoCoDataset(BaseDataset):

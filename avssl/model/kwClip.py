@@ -15,11 +15,9 @@ from torch.nn import functional as F
 
 from ..base import OrderedNamespace
 from ..module import (
-    ChimeraSpeechEncoder,
     ClipModel,
     FairseqSpeechEncoder_Hubert,
     MLPLayers,
-    S3prlSpeechEncoder,
     S3prlSpeechEncoderPlus,
     losses,
     mutualRetrieval,
