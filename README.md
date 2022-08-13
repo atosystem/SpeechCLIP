@@ -1,16 +1,42 @@
-# audio-visual-ssl
-Apply two types of vetor quantization - gumbel softmax and k-means (refer from [fairseq.modules](https://github.com/pytorch/fairseq/tree/main/fairseq/modules))
+# SpeechCLIP
 
-* If you want to change the type of vector quantization, please modify the config yaml file under `config/speechclip_c/train_flickr.yaml`.
-* If you want to run only for **validation** or **testing**, add `--eval` or `--test` flag at `egs/run_speechclip_c.sh`
-* If you want to resume your training from specific checkpoint, add `--ckpt your_checkpoint_path` flag at  `egs/run_speechclip_c.sh`
-* Please run autoformatter before opening PR! Autoformat `audio-visual-ssl/dev-support/`
-  
-To run cascaded speechclip, run
+
+# Prequisite
+
+## Install packages
 ```bash
-bash egs/run_speechclip_c.sh
-
+pip install -r requirements.txt
 ```
+
+## Download Pretrained Checkpoints
+
+
+
+> Notice that it reuires 2 GPUs for training base models and 4 GPUs for large models
+
+# Usage
+
+## Train
+
+Example: train Parallel SpeechCLIP base:
+
+```bash
+bash egs/model_base/parallel/train.sh
+```
+
+## Inference
+
+Example: test Parallel SpeechCLIP base:
+(Using pretrained checkpoint)
+```bash
+bash egs/model_base/parallel/test.sh
+```
+
+> For more settings, please see the folders in `./egs/`.
+
+# Authors
+
+...
 
 # Contribute
 Please run autoformatter before opening PR!
