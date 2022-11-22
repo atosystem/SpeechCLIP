@@ -10,12 +10,7 @@ from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader, random_split
 
 from ..base import OrderedNamespace
-from ..model import (
-    KWClip_CLIP_Original,
-    KWClip_GeneralTransformer,
-    KWClip_GeneralTransformer_SpeechText,
-    KWClip_SpeechText,
-)
+from ..model import KWClip_GeneralTransformer
 from .base_task import BaseTask, TrainSpeechClipBaseTask
 
 

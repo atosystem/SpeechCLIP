@@ -25,13 +25,12 @@ def add_general_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     # Hparams
     parser.add_argument("--njobs", type=int, default=0, help="Number of workers")
     parser.add_argument("--gpus", type=int, default=0, help="Number of GPUs")
-    # parser.add_argument(
-    #     "--device",
-    #     type=str,
-    #     default="cuda:0",
-    #     help="Device name, could be cuda:X or cpu",
-    # )
     parser.add_argument("--seed", type=int, default=7122, help="Random seed")
+
+    # overide dataset path
+    parser.add_argument(
+        "--dataset_root", type=str, default="", help="Override dataset root"
+    )
 
     # Logging
     parser.add_argument("--log_level", type=str, default="info", help="Logging level")

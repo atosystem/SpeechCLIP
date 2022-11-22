@@ -9,3 +9,7 @@ jiwer
 plotly
 kaleido
 librosa
+gdown
+transformer
+isort
+black

@@ -1,7 +1,7 @@
 data:
   dataset:
     name: flickr
-    dataset_root: /home/twsezjg982/dataset/flickr/
+    dataset_root: data/flickr
     text_file: Flickr8k.token.txt
     clip_image_transform: ViT-L/14
     load_image: true

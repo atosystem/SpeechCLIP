@@ -1,7 +1,7 @@
 data:
   dataset:
     name: coco
-    dataset_root: /work/vjsalt22/dataset/coco/
+    dataset_root: data/coco
     clip_image_transform: ViT-L/14 #ViT-B/32 #ViT-L/14
     split_prefix: SpokenCOCO_ksplit
     load_image: true

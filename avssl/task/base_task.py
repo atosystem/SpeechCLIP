@@ -10,12 +10,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from torch.utils.data import DataLoader, random_split
 
 from ..base import OrderedNamespace
-from ..data import (
-    CoCoDataset,
-    FlickrDataset,
-    PlacesImageCaptionDataset,
-    collate_general,
-)
+from ..data import CoCoDataset, FlickrDataset, collate_general
 from ..util import add_general_arguments, set_logging, set_pl_logger
 
 
@@ -70,9 +65,11 @@ class TrainSpeechClipBaseTask(BaseTask):
             if self.args.save_path != "":
                 model.config.save_path = self.args.save_path
 
-            # model.config.retrieval.exactly = False
-            # model.config.log_setting.log_draw_pca_every_n_epoch = 0
-            # model.config.trainer.limit_val_batches = 5
+            # overide dataset_root
+            if self.args.dataset_root != "":
+                model.config.data.dataset.dataset_root = self.args.dataset_root
+            del self.args.dataset_root
+
             config = model.config
             config = config.to_dict()
             config.update(vars(self.args))
@@ -116,16 +113,6 @@ class TrainSpeechClipBaseTask(BaseTask):
                     # modalities=["audio", "image", "text"],
                     **config.data.dataset,
                 )
-        elif config.data.dataset.name == "places":
-            tr_set = PlacesImageCaptionDataset(
-                split="train", load_image=False, **config.data.dataset
-            )
-            tr_len = int(len(tr_set) * config.data.split_ratio)
-            tr_set, dv_set = random_split(
-                tr_set,
-                [tr_len, len(tr_set) - tr_len],
-                generator=torch.Generator().manual_seed(config.seed),
-            )
         elif config.data.dataset.name == "coco":
             if self.args.train:
                 tr_set = CoCoDataset(

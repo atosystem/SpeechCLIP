@@ -28,14 +28,10 @@ from ..module.speechclip_c_modules import vector_quantizers
 from ..module.speechclip_c_modules.kw_bn import Kw_BatchNorm
 from ..optim import get_scheduler
 from ..util import get_keypadding_mask
-from ..util.embedding_visualization import draw_embedding_space_PCA
 from .base_model import BaseLightningModel
 
 __all__ = [
     "KWClip_GeneralTransformer",
-    "KWClip_SpeechText",
-    "KWClip_CLIP_Original",
-    "KWClip_GeneralTransformer_SpeechText",
 ]
 
 """METRIC_REDUCEFN_MAPPING
@@ -65,8 +61,6 @@ class KWClipBase(BaseLightningModel):
             self.audio_encoder = S3prlSpeechEncoderPlus(**config.audio_encoder)
         elif self.audio_encoder_type == "FairseqHubert":
             self.audio_encoder = FairseqSpeechEncoder_Hubert(**config.audio_encoder)
-        elif self.audio_encoder_type == "ChimeraSpeechEncoder":
-            self.audio_encoder = ChimeraSpeechEncoder(**config.audio_encoder)
         else:
             logger.warning("No audio encoder loaded")
 
@@ -116,7 +110,6 @@ class KWClipBase(BaseLightningModel):
         if self.audio_encoder_type in [
             "s3prl_plus",
             "FairseqHubert",
-            "ChimeraSpeechEncoder",
         ]:
             return self.audio_encoder(
                 wav, wav_len, return_hidden_states=return_hidden_states
@@ -1218,18 +1211,16 @@ class KWClip_GeneralTransformer(KWClipBase):
 
         return _params
 
-    def feature_extractor_s3prl(self, wav, featrure_layer_norm=True):
+    def feature_extractor_s3prl(self, wav) -> Tuple[torch.Tensor, Tuple]:
         """feature_extractor_s3prl
 
-        Function for extracting features for s3prl
-
         Args:
-            wav (_type_): _description_
-            featrure_layer_norm (bool, optional): _description_. Defaults to True.
+            wav (list): list of wavforms
 
         Returns:
-            _type_: _description_
+            Tuple: (output_embeddings, tuples of all hidden states)
         """
+
         wav, wav_len = self.processWavs(wav)
 
         audio_feat, audio_len, hidden_states = self.forward_audio(
@@ -1251,32 +1242,6 @@ class KWClip_GeneralTransformer(KWClipBase):
             )
             assert isinstance(parallel_hidden_states, tuple)
             hidden_states = hidden_states + tuple(parallel_hidden_states[1:])
-
-        # assert len(hidden_states) == 15
-        # print(hidden_states[0].shape)
-        # print(hidden_states[-1].shape)
-        # if hidden_states[0].shape[0] > 1:
-        # assert hidden_states[0].shape[0] == 1
-        # import uuid
-        # import glob
-
-        # current_files_num = len(list(glob.glob("/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/*.pt")))
-        # if current_files_num >= 51094:
-        #     print("Finish")
-        #     exit(1)
-
-        # hubert_states = torch.stack(hidden_states).view(14,-1,768)
-        # hubert_states = torch.mean(torch.norm(hubert_states,dim=-1),dim=-1)
-        # assert hubert_states.shape == (14,)
-        # # gap = torch.mean(torch.norm(hubert_states[:-1,...] - hubert_states[-1,...],dim=-1),dim=-1)
-        # # print(hubert_states.shape)
-        # # exit(1)
-        # torch.save(hubert_states.cpu(),f"/work/twsezjg982/atosystem/audio-visual-ssl/slurms/KS_hidstates/KW_bsz256_WS_p1_flickr/{uuid.uuid4()}.pt")
-        assert featrure_layer_norm == True
-        if featrure_layer_norm:
-            hidden_states = torch.stack(hidden_states, dim=0)
-            hidden_states = F.layer_norm(hidden_states, (hidden_states.shape[-1],))
-            hidden_states = [x for x in hidden_states]
 
         return hidden_states[-1], hidden_states
 
@@ -1330,6 +1295,92 @@ class KWClip_GeneralTransformer(KWClipBase):
             )
 
         return losses
+
+    def encode_speech(
+        self,
+        wav,
+    ) -> dict:
+        """encode speech
+
+        Args:
+            wav (list): input list of waveforms
+
+        Returns:
+            dict: {
+                "cascaded_audio_feat" : if cascaded branch exists
+                "parallel_audio_feat" : if parallel branch exists
+                "vq_results"          : if cascaded branch exists
+                "keywords"            : if cascaded branch exists
+                }
+        """
+
+        wav, wav_len = self.processWavs(wav)
+
+        audio_feat, audio_len = self.forward_audio(wav, wav_len)
+
+        cascaded_audio_feat = None
+        parallel_audio_feat = None
+        vq_results = None
+        keywords = None
+        if self.cascaded_branch is not None:
+            if (
+                self.config.model_settings.cascaded_branch.type
+                == "KW_CascadedBranch_Integrated"
+            ):
+                (
+                    cascaded_audio_feat,
+                    vq_results,
+                    keywords,
+                    parallel_audio_feat,
+                ) = self.cascaded_branch(
+                    audio_feat=audio_feat,
+                    audio_len=audio_len,
+                )
+            else:
+                cascaded_audio_feat, vq_results, keywords = self.cascaded_branch(
+                    audio_feat=audio_feat,
+                    audio_len=audio_len,
+                )
+
+        if self.parallel_branch is not None:
+            parallel_audio_feat = self.parallel_branch(
+                audio_feat=audio_feat,
+                audio_len=audio_len,
+            )
+            if self.p_branch_proj_net is not None:
+                parallel_audio_feat = self.p_branch_proj_net(parallel_audio_feat)
+
+        return_data = {}
+
+        if cascaded_audio_feat is not None:
+            cascaded_audio_feat = cascaded_audio_feat / cascaded_audio_feat.norm(
+                dim=-1, keepdim=True
+            )
+            return_data["cascaded_audio_feat"] = cascaded_audio_feat
+
+        if parallel_audio_feat is not None:
+            parallel_audio_feat = parallel_audio_feat / parallel_audio_feat.norm(
+                dim=-1, keepdim=True
+            )
+            return_data["parallel_audio_feat"] = parallel_audio_feat
+
+        if self.config.model_settings.cascaded_objective_weight > 0:
+            return_data["softmax_temp"] = vq_results["temp"]
+
+        if self.config.model_settings.parallel_objective_weight > 0:
+            pass
+
+        return_data.update(
+            {
+                "cl_temp": self.criterion.current_temperature,
+            }
+        )
+        return {
+            "cascaded_audio_feat": cascaded_audio_feat,
+            "parallel_audio_feat": parallel_audio_feat,
+            "vq_results": vq_results,
+            "keywords": keywords,
+        }
 
     def forward(
         self,
@@ -1443,541 +1494,3 @@ class KWClip_GeneralTransformer(KWClipBase):
         audio_feat, audio_len = self.forward_audio(wav, wav_len)
 
         return self.cascaded_branch.getAttentionMap(audio_feat, audio_len)
-
-
-class KWClip_CLIP_Original(KWClipBase):
-    """KWClip_CLIP_Original
-
-    The original CLIP Text Encoder + Image Encoder
-
-    """
-
-    def __init__(self, config: OrderedNamespace):
-        super().__init__(config)
-        # the original CLIP doesn't require parallel and cascaded branch
-        assert self.cascaded_branch is None
-        assert self.parallel_branch is None
-
-    def getTrainableParams(self):
-        _params = super().getTrainableParams()
-        return _params
-
-    def reportRetrieval(
-        self,
-        score_per_A: torch.Tensor,
-        score_per_B: torch.Tensor,
-        AB_answers: torch.Tensor,
-        BA_answers: torch.Tensor,
-        metadata: dict = {
-            "modality_A_title": "audio",
-            "modality_B_title": "image",
-            "modality_A_logAbbr": "A",
-            "modality_B_logAbbr": "I",
-        },
-    ):
-        return super().reportRetrieval(
-            score_per_A,
-            score_per_B,
-            AB_answers,
-            BA_answers,
-            {
-                "modality_A_title": "text",
-                "modality_B_title": "image",
-                "modality_A_logAbbr": "T",
-                "modality_B_logAbbr": "I",
-            },
-        )
-
-    def compute_loss(self, input_feats):
-        """compute the loss here
-
-        Args:
-            input_feats (Any): the feats required for computing loss
-        """
-        assert isinstance(input_feats, dict)
-        assert "id" in input_feats
-        assert (
-            "cascaded_audio_feat" in input_feats or "parallel_audio_feat" in input_feats
-        )
-        assert "image_feat" in input_feats
-
-        cascaded_audio_feat = (
-            input_feats["cascaded_audio_feat"].float()
-            if "cascaded_audio_feat" in input_feats
-            else None
-        )
-        parallel_audio_feat = (
-            input_feats["parallel_audio_feat"].float()
-            if "parallel_audio_feat" in input_feats
-            else None
-        )
-        image_feat = input_feats["image_feat"].float()
-        id = input_feats["id"]
-
-        losses = {"loss": 0}
-        if self.config.model_settings.cascaded_objective_weight > 0:
-            losses["c_cl_loss"] = self.criterion(
-                feat_A=cascaded_audio_feat,
-                feat_B=image_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.cascaded_objective_weight
-                * losses["c_cl_loss"]
-            )
-
-        if self.config.model_settings.parallel_objective_weight > 0:
-            losses["p_cl_loss"] = self.criterion(
-                feat_A=parallel_audio_feat,
-                feat_B=image_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.parallel_objective_weight
-                * losses["p_cl_loss"]
-            )
-
-        return losses
-
-    def forward(
-        self,
-        batch,
-    ) -> dict:
-        image = batch["image"]
-        id = batch["id"]
-        text = batch["text"]
-
-        # update device information to clip model
-        self.clip.update_device(self.device)
-
-        image_feat = self.forward_image(image)
-        text_feat = self.forward_text(text.view(-1, 77))
-
-        image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
-        text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-
-        losses = {
-            "id": id,
-            "image_feat": image_feat,
-        }
-        log_metrics = {}
-
-        losses["parallel_audio_feat"] = text_feat
-
-        log_metrics.update(
-            {
-                "cl_temp": self.criterion.current_temperature,
-            }
-        )
-        return (
-            losses,
-            log_metrics,
-            {
-                "parallel_audio_feat": text_feat,
-                "image_feat": image_feat,
-                "id": id,
-                "vq_results": None,
-                "keywords": None,
-            },
-        )
-
-
-class KWClip_GeneralTransformer_SpeechText(KWClip_GeneralTransformer):
-    """KWClip_GeneralTransformer_SpeechText
-
-    Use this class for load pretrained Parallel SpeechCLIP for Zeroshot Spech-Text Retrieval
-    Using the parallel branch only
-
-    """
-
-    def __init__(self, config: OrderedNamespace):
-        config.retrieval.audio_feat_src = "parallel"
-        super().__init__(config)
-        assert config.model_settings.parallel_objective_weight > 0
-
-    def compute_loss(self, input_feats):
-        """compute the loss here
-
-        Args:
-            input_feats (Any): the feats required for computing loss
-        """
-        assert isinstance(input_feats, dict)
-        assert "id" in input_feats
-        assert (
-            "cascaded_audio_feat" in input_feats or "parallel_audio_feat" in input_feats
-        )
-
-        cascaded_audio_feat = (
-            input_feats["cascaded_audio_feat"].float()
-            if "cascaded_audio_feat" in input_feats
-            else None
-        )
-        parallel_audio_feat = (
-            input_feats["parallel_audio_feat"].float()
-            if "parallel_audio_feat" in input_feats
-            else None
-        )
-        text_feat = input_feats["text_feat"].float()
-        id = input_feats["id"]
-
-        losses = {"loss": 0}
-        if self.config.model_settings.cascaded_objective_weight > 0:
-            losses["c_cl_loss"] = self.criterion(
-                feat_A=cascaded_audio_feat,
-                feat_B=text_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.cascaded_objective_weight
-                * losses["c_cl_loss"]
-            )
-
-        if self.config.model_settings.parallel_objective_weight > 0:
-            losses["p_cl_loss"] = self.criterion(
-                feat_A=parallel_audio_feat,
-                feat_B=text_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.parallel_objective_weight
-                * losses["p_cl_loss"]
-            )
-
-        return losses
-
-    def forward(
-        self,
-        batch,
-    ) -> dict:
-
-        wav = batch["wav"]
-        wav_len = batch["wav_len"]
-        id = batch["id"]
-        text = batch["text"]
-
-        # update device information to clip model
-        self.clip.update_device(self.device)
-
-        audio_feat, audio_len = self.forward_audio(wav, wav_len)
-
-        text_feat = self.forward_text(text.view(-1, 77))
-
-        parallel_audio_feat = None
-        vq_results = None
-        keywords = None
-
-        if self.parallel_branch is not None:
-            parallel_audio_feat = self.parallel_branch(
-                audio_feat=audio_feat,
-                audio_len=audio_len,
-            )
-            if self.p_branch_proj_net is not None:
-                parallel_audio_feat = self.p_branch_proj_net(parallel_audio_feat)
-        else:
-            logger.error("No parallel branch found")
-            exit(1)
-
-        losses = {
-            "id": id,
-            "text_feat": text_feat,
-        }
-        log_metrics = {}
-
-        if parallel_audio_feat is not None:
-            parallel_audio_feat = parallel_audio_feat / parallel_audio_feat.norm(
-                dim=-1, keepdim=True
-            )
-            losses["parallel_audio_feat"] = parallel_audio_feat
-
-        if self.config.model_settings.parallel_objective_weight > 0:
-            pass
-
-        # losses.update(
-        log_metrics.update(
-            {
-                "cl_temp": self.criterion.current_temperature,
-            }
-        )
-        return (
-            losses,
-            log_metrics,
-            {
-                "parallel_audio_feat": parallel_audio_feat,
-                "text_feat": text_feat,
-                "id": id,
-                "vq_results": vq_results,
-                "keywords": keywords,
-            },
-        )
-
-    def validation_epoch_end(self, outputs: list) -> None:
-        """validation_epoch_end
-
-        Override for conducting Speech-Text Retrieval
-
-        """
-        all_text_feats = torch.cat([x["text_feat"] for x in outputs], dim=0)
-        if "id" in outputs[0] and outputs[0]["id"] is not None:
-            all_ids = torch.cat([x["id"] for x in outputs], dim=0)
-        else:
-            all_ids = torch.arange(len(all_text_feats))
-
-        all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
-        all_audo_feats_id = all_ids
-        all_text_feats_id = all_ids
-
-        print(
-            "Total #{} text, #{} audio".format(len(all_text_feats), len(all_audo_feats))
-        )
-        assert len(all_text_feats) == len(all_audo_feats)
-
-        # calculate dot product
-        score_per_audio = torch.matmul(
-            all_audo_feats.float(),
-            all_text_feats.float().T,
-        ).cpu()
-
-        score_per_text = score_per_audio.T
-
-        # AT : Audio -> Text, TA: Text -> Audio
-        AT_answers = all_audo_feats_id
-        TA_answers = all_text_feats_id
-
-        self.reportRetrieval(
-            score_per_A=score_per_audio,
-            score_per_B=score_per_text,
-            AB_answers=AT_answers,
-            BA_answers=TA_answers,
-        )
-
-    def reportRetrieval(
-        self,
-        score_per_A: torch.Tensor,
-        score_per_B: torch.Tensor,
-        AB_answers: torch.Tensor,
-        BA_answers: torch.Tensor,
-    ):
-        return super().reportRetrieval(
-            score_per_A,
-            score_per_B,
-            AB_answers,
-            BA_answers,
-            {
-                {
-                    "modality_A_title": "audio",
-                    "modality_B_title": "text",
-                    "modality_A_logAbbr": "A",
-                    "modality_B_logAbbr": "T",
-                }
-            },
-        )
-
-
-class KWClip_SpeechText(KWClipBase):
-    """KWClip_SpeechText
-
-    Train Speech-Text model using SSL model and CLIP Text Encoder
-
-    """
-
-    def __init__(self, config: OrderedNamespace):
-        super().__init__(config)
-        # exactly means that we do not serve the captions correspond to the same image as the same
-        if self.config.retrieval.exactly:
-            logger.warning("Retrieval = (Exactly)")
-        self.parallel_branch = None
-        if self.config.model_settings.parallel_objective_weight > 0:
-            logger.info("Create Parallel Branch")
-            self.parallel_branch = KW_ParallelBranch(
-                config=self.config,
-                audio_dim=self.audio_embd_dim,
-                out_dim=self.subword_embd_dim,
-            )
-
-        self.img_enc_proj_net = None
-        image_encoder_projection = self.config.model_settings.get(
-            "image_encoder_projection", None
-        )
-        if image_encoder_projection is not None:
-            logger.info(
-                f"image_encoder_projection dims:{image_encoder_projection.dimensions} droupout:{image_encoder_projection.dropout}"
-            )
-            self.img_enc_proj_net = MLPLayers(
-                units=image_encoder_projection.dimensions,
-                dropout=image_encoder_projection.dropout,
-            )
-
-        self.p_branch_proj_net = None
-        parallel_branch_projection = self.config.model_settings.get(
-            "parallel_branch_projection", None
-        )
-        if parallel_branch_projection is not None:
-            logger.info(
-                f"parallel_branch_projection dims:{parallel_branch_projection.dimensions} droupout:{parallel_branch_projection.dropout}"
-            )
-            self.p_branch_proj_net = MLPLayers(
-                units=parallel_branch_projection.dimensions,
-                dropout=parallel_branch_projection.dropout,
-            )
-
-    def getTrainableParams(self):
-        _params = super().getTrainableParams()
-        if self.parallel_branch is not None:
-            logger.info("Add parallel_branch parameters")
-            _params += list(self.parallel_branch.parameters())
-
-        if self.img_enc_proj_net is not None:
-            logger.info("Add img_enc_proj_net parameters")
-            _params += list(self.img_enc_proj_net.parameters())
-
-        if self.p_branch_proj_net is not None:
-            logger.info("Add parallel_branch_projection parameters")
-            _params += list(self.p_branch_proj_net.parameters())
-
-        return _params
-
-    def compute_loss(self, input_feats: dict):
-        """compute the loss here
-
-        Args:
-            input_feats (dict): the feats required for computing loss
-        """
-        assert isinstance(input_feats, dict)
-        assert "id" in input_feats
-        assert "parallel_audio_feat" in input_feats
-        assert "text_feat" in input_feats
-
-        parallel_audio_feat = (
-            input_feats["parallel_audio_feat"].float()
-            if "parallel_audio_feat" in input_feats
-            else None
-        )
-        text_feat = input_feats["text_feat"].float()
-        id = input_feats["id"]
-
-        losses = {"loss": 0}
-        if self.config.model_settings.parallel_objective_weight > 0:
-            losses["p_cl_loss"] = self.criterion(
-                feat_A=parallel_audio_feat,
-                feat_B=text_feat,
-                index=id,
-            )
-            losses["loss"] += (
-                self.config.model_settings.parallel_objective_weight
-                * losses["p_cl_loss"]
-            )
-
-        return losses
-
-    def forward(
-        self,
-        batch,
-    ) -> dict:
-
-        wav = batch["wav"]
-        wav_len = batch["wav_len"]
-        text = batch["text"]
-        id = batch["id"]
-
-        if self.config.retrieval.exactly:
-            id = None
-
-        # update device information to clip model
-        self.clip.update_device(self.device)
-
-        audio_feat, audio_len = self.forward_audio(wav, wav_len)
-
-        text_feat = self.forward_text(text.view(-1, 77))
-
-        if self.parallel_branch is not None:
-            parallel_audio_feat = self.parallel_branch(
-                audio_feat=audio_feat,
-                audio_len=audio_len,
-            )
-            if self.p_branch_proj_net is not None:
-                parallel_audio_feat = self.p_branch_proj_net(parallel_audio_feat)
-
-        text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-
-        losses = {
-            "id": id,
-            "text_feat": text_feat,
-        }
-        log_metrics = {}
-
-        if parallel_audio_feat is not None:
-            parallel_audio_feat = parallel_audio_feat / parallel_audio_feat.norm(
-                dim=-1, keepdim=True
-            )
-            losses["parallel_audio_feat"] = parallel_audio_feat
-
-        log_metrics.update(
-            {
-                "cl_temp": self.criterion.current_temperature,
-            }
-        )
-        return (
-            losses,
-            log_metrics,
-            {
-                "text_feat": text_feat,
-                "parallel_audio_feat": parallel_audio_feat,
-                "id": id,
-            },
-        )
-
-    def validation_epoch_end(self, outputs):
-
-        all_text_feats = torch.cat([x["text_feat"] for x in outputs], dim=0)
-        if "id" in outputs[0] and outputs[0]["id"] is not None:
-            all_ids = torch.cat([x["id"] for x in outputs], dim=0)
-        else:
-            all_ids = torch.arange(len(all_text_feats))
-
-        all_audo_feats = torch.cat([x["audio_feat"] for x in outputs], dim=0)
-        all_audo_feats_id = all_ids
-        all_text_feats_id = all_ids
-
-        print(
-            "Total #{} text, #{} audio".format(len(all_text_feats), len(all_audo_feats))
-        )
-        assert len(all_text_feats) == len(all_audo_feats)
-
-        # calculate dot product
-        score_per_audio = torch.matmul(
-            all_audo_feats.float(),  # .to(self.device),
-            all_text_feats.float().T,  # .to(self.device),
-        ).cpu()
-        # score_per_audio = score_per_audio
-        score_per_text = score_per_audio.T
-
-        # AI : Audio -> Image, IA: Image -> Audio
-        AI_answers = all_audo_feats_id
-        IA_answers = all_text_feats_id
-
-        self.reportRetrieval(
-            score_per_audio=score_per_audio,
-            score_per_image=score_per_text,
-            AI_answers=AI_answers,
-            IA_answers=IA_answers,
-        )
-
-    def reportRetrieval(
-        self,
-        score_per_A: torch.Tensor,
-        score_per_B: torch.Tensor,
-        AB_answers: torch.Tensor,
-        BA_answers: torch.Tensor,
-    ):
-        return super().reportRetrieval(
-            score_per_A,
-            score_per_B,
-            AB_answers,
-            BA_answers,
-            {
-                "modality_A_title": "audio",
-                "modality_B_title": "text",
-                "modality_A_logAbbr": "A",
-                "modality_B_logAbbr": "T",
-            },
-        )
