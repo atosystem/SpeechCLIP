@@ -11,6 +11,10 @@
 
 Links: [arXiv](https://arxiv.org/abs/2210.00705 ) | [Blog](https://atosystem.github.io/blogs/speechclip)
 
+## Code Contributors
+
+Yi-Jen Shih, Hsuan-Fu Wang, Heng-Jui Chang
+
 ## Prequisite
 
 ### Install packages
